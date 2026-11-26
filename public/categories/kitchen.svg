@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floor" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="tumblerBody" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#A6C4B5"/>
+      <stop offset="35%" stop-color="#CFE3D8"/>
+      <stop offset="75%" stop-color="#7EA694"/>
+      <stop offset="100%" stop-color="#6B9280"/>
+    </linearGradient>
+    <linearGradient id="tumblerLid" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FAF3EA"/>
+      <stop offset="50%" stop-color="#FFFDF9"/>
+      <stop offset="100%" stop-color="#DFD2C2"/>
+    </linearGradient>
+    <linearGradient id="cupBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF9F1"/>
+      <stop offset="55%" stop-color="#F3E4D1"/>
+      <stop offset="100%" stop-color="#DEC7AE"/>
+    </linearGradient>
+    <linearGradient id="coffeeTop" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5A3C"/>
+      <stop offset="100%" stop-color="#5B3620"/>
+    </linearGradient>
+    <linearGradient id="straw" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D96B36"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="206" rx="74" ry="15" fill="url(#floor)"/>
+  <!-- Straw -->
+  <path d="M104 42 L112 72" stroke="url(#straw)" stroke-width="9" stroke-linecap="round"/>
+  <!-- Insulated Tumbler -->
+  <path d="M76 80 L138 80 L132 184 C131 192 124 196 107 196 C90 196 83 192 82 184 Z" fill="url(#tumblerBody)"/>
+  <ellipse cx="107" cy="186" rx="25" ry="7" fill="#638877" opacity="0.5"/>
+  <rect x="72" y="64" width="70" height="22" rx="10" fill="url(#tumblerLid)"/>
+  <ellipse cx="107" cy="66" rx="33" ry="6" fill="#FFFFFF" opacity="0.7"/>
+  <!-- Warm Coffee Mug in foreground right -->
+  <path d="M180 144 C198 144 198 174 180 174" fill="none" stroke="#E5CEB5" stroke-width="10" stroke-linecap="round"/>
+  <path d="M126 128 L184 128 L180 184 C179 194 170 199 155 199 C140 199 131 194 130 184 Z" fill="url(#cupBody)"/>
+  <ellipse cx="155" cy="128" rx="29" ry="9" fill="#FFFDF9"/>
+  <ellipse cx="155" cy="129" rx="22" ry="6" fill="url(#coffeeTop)"/>
+  <ellipse cx="149" cy="128" rx="7" ry="2.2" fill="#D4A67C" opacity="0.6"/>
+</svg>

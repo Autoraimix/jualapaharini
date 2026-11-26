@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorFit" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coralPlate" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="55%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+    <linearGradient id="creamBar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="100%" stop-color="#DFCEBA"/>
+    </linearGradient>
+    <linearGradient id="matSage" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4E5DC"/>
+      <stop offset="60%" stop-color="#98BCAE"/>
+      <stop offset="100%" stop-color="#769E8E"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="196" rx="76" ry="15" fill="url(#floorFit)"/>
+  <!-- Rolled Yoga Mat behind -->
+  <g transform="rotate(-14 148 118)">
+    <rect x="108" y="64" width="66" height="114" rx="28" fill="url(#matSage)"/>
+    <ellipse cx="141" cy="76" rx="22" ry="8" fill="#E8F2EC"/>
+    <ellipse cx="141" cy="76" rx="10" ry="3.5" fill="#7CA494"/>
+  </g>
+  <!-- 3D Dumbbell in foreground -->
+  <g transform="rotate(18 110 148)">
+    <rect x="68" y="138" width="84" height="18" rx="9" fill="url(#creamBar)"/>
+    <rect x="46" y="116" width="28" height="62" rx="13" fill="url(#coralPlate)"/>
+    <rect x="36" y="124" width="16" height="46" rx="8" fill="#E57B45"/>
+    <rect x="146" y="116" width="28" height="62" rx="13" fill="url(#coralPlate)"/>
+    <rect x="168" y="124" width="16" height="46" rx="8" fill="#E57B45"/>
+  </g>
+</svg>
