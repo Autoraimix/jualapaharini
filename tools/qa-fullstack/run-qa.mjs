@@ -479,6 +479,19 @@ with sync_playwright() as p:
     page.get_by_text("Verified catalog prices are up to date.").or_(page.get_by_text("Live price metadata refreshed.")).wait_for(timeout=10000)
     assert page.get_by_text("Storefront blocked").count() == 0, "Public modal must not show alarming Storefront blocked error when SQLite prices exist"
     page.get_by_role("button", name="Close product details").click()
+
+    # Also verify Next/Previous gallery arrows on multi-image product ("PS5 Gallery QA Item")
+    page.locator("article", has_text="PS5 Gallery QA Item").first.click()
+    page.get_by_role("button", name="View full product picture").click()
+    assert page.get_by_role("button", name="Next image").is_visible(), "Next image arrow must appear for multi-image products"
+    assert page.get_by_role("button", name="Previous image").is_visible(), "Previous image arrow must appear for multi-image products"
+    assert page.get_by_text("1 / 2").is_visible(), "Gallery counter 1 / 2 must show in lightbox"
+    page.get_by_role("button", name="Next image").click()
+    assert page.get_by_text("2 / 2").is_visible(), "Next image arrow must advance to 2 / 2"
+    page.get_by_role("button", name="Previous image").click()
+    assert page.get_by_text("1 / 2").is_visible(), "Previous image arrow must return to 1 / 2"
+    page.get_by_role("button", name="Close full image").click()
+    page.get_by_role("button", name="Close product details").click()
     page.wait_for_timeout(200)
 
     # Navigate directly to /admin
