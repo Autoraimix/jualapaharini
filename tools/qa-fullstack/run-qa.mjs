@@ -467,10 +467,12 @@ with sync_playwright() as p:
     broken_imgs = page.evaluate("Array.from(document.querySelectorAll('img')).filter(i => i.complete && i.naturalWidth === 0).length")
     assert broken_imgs == 0, f"Found {broken_imgs} broken images on PC Home"
 
-    # Open first product modal, verify Full view zoom lightbox & Refresh Prices
+    # Open first product modal, verify Full view zoom lightbox covers true full viewport & Refresh Prices
     page.locator("article").first.click()
     page.get_by_role("button", name="View full product picture").click()
     assert page.get_by_role("button", name="Close full image").is_visible(), "Full image lightbox must open on click"
+    dlg_box = page.get_by_role("dialog", name="Full product image").bounding_box()
+    assert dlg_box and dlg_box["width"] >= 1400, f"Full image lightbox must span full viewport, got {dlg_box}"
     page.get_by_role("button", name="Close full image").click()
     page.get_by_role("button", name="Refresh Prices").wait_for(timeout=10000)
     page.get_by_role("button", name="Refresh Prices").click()

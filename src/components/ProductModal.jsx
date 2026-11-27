@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   ExternalLink,
@@ -226,28 +227,6 @@ export function ProductModal({
                   ))}
                 </div>
               )}
-
-              {zoomedImage && (
-                <div
-                  className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4"
-                  onClick={() => setZoomedImage('')}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setZoomedImage('')}
-                    aria-label="Close full image"
-                    className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1D1C1A] shadow-lg hover:bg-[#F3EDE4]"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                  <img
-                    src={zoomedImage}
-                    alt={product.title}
-                    onClick={(e) => e.stopPropagation()}
-                    className="max-h-[90vh] max-w-[92vw] rounded-2xl bg-white object-contain p-2 shadow-2xl"
-                  />
-                </div>
-              )}
             </div>
           );
         })()}
@@ -380,6 +359,35 @@ export function ProductModal({
           })}
         </div>
       </div>
+      {zoomedImage &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-label="Full product image"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4 backdrop-blur-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomedImage('');
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setZoomedImage('')}
+              aria-label="Close full image"
+              className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#1D1C1A] shadow-lg transition hover:bg-[#F3EDE4]"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={zoomedImage}
+              alt={product.title}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[88vh] max-w-[92vw] rounded-2xl bg-white object-contain p-2 shadow-2xl"
+            />
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
