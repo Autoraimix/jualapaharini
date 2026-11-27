@@ -40,27 +40,35 @@ export function parseCopiedProductText(rawInput) {
   }
 
   // 2. Parse raw copied product text
-  // Price: RM 79.90 / MYR79.90 / RM1,299.00
+  // Ignore obvious voucher/off lines like "RM15 Off" / "Min. Spend RM0" when other RM prices exist
+  const filteredLines = raw
+    .split(/\r?\n/)
+    .filter((l) => !/(?:min\.?\s*spend|voucher|cashback|off\b|diskaun)/i.test(l))
+    .join('\n');
+
   let price = null;
-  const priceMatches = [...raw.matchAll(/(?:RM|MYR)\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/gi)];
+  const searchSource = filteredLines.trim() ? filteredLines : raw;
+  const priceMatches = [
+    ...searchSource.matchAll(/(?:RM|MYR)\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/gi),
+  ];
   if (priceMatches.length > 0) {
     const candidates = priceMatches
       .map((m) => Number.parseFloat(m[1].replace(/,/g, '')))
       .filter((n) => Number.isFinite(n) && n >= 0.5 && n <= 50000);
     if (candidates.length > 0) {
-      // Selling/promo price is typically the first or lower price shown
       price = Math.round(candidates[0] * 100) / 100;
     }
   }
 
-  // Rating: "4.9 / 5", "★ 4.9", "4.9 out of 5", "4.9 (1.2k)", or standalone rating near rating keywords
+  // Rating: "4.9 / 5", "★ 4.9", "4.9 Ratings", "4.9 Penilaian", "4.9 (1.2k)"
   let rating = null;
   const ratingPatterns = [
     /(?:★|⭐)\s*([1-5](?:\.\d)?)/,
     /([1-5]\.\d)\s*(?:\/\s*5|out of 5|stars?)/i,
+    /([1-5]\.\d)\s*(?:\r?\n|\s)*(?:[\d.,]+[kK]?\s*)?(?:ratings?|ulasan|penilaian|reviews?)/i,
     /([1-5]\.\d)\s*(?:\(\s*[\d.,]+[kK]?\s*(?:ratings?|ulasan|penilaian|reviews?)?\s*\))/i,
     /(?:rating|penilaian|score)\s*[:\-]?\s*([1-5](?:\.\d)?)/i,
-    /(?:^|\s)([45]\.\d)(?=\s|$)/m,
+    /(?:^|\s)([1-5]\.\d)(?=\s|$)/m,
   ];
   for (const pat of ratingPatterns) {
     const m = raw.match(pat);
@@ -95,7 +103,7 @@ export function parseCopiedProductText(rawInput) {
     .filter((l) => l.length >= 10 && l.length <= 180);
   for (const line of lines) {
     if (/^(?:RM|MYR)\s?\d/i.test(line)) continue;
-    if (/^\d+(?:\.\d+)?\s*[kK]?\+?\s*(?:sold|terjual)/i.test(line)) continue;
+    if (/^\d+(?:\.\d+)?\s*[kK]?\+?\s*(?:sold|terjual|ratings?|penilaian)/i.test(line)) continue;
     if (/^(?:Shopee|TikTok|Lazada|Pinduoduo|Free Shipping|Mall|Preferred)/i.test(line)) continue;
     title = line;
     break;
@@ -119,42 +127,70 @@ export function parseCopiedProductText(rawInput) {
 export function buildSyncBookmarkletHref() {
   const code = `(() => {
     try {
-      const txt = (document.body.innerText || '').slice(0, 8000);
-      const pm = [...txt.matchAll(/(?:RM|MYR)\\s?(\\d{1,3}(?:,\\d{3})*(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?)/gi)]
-        .map(m => parseFloat(m[1].replace(/,/g, '')))
-        .filter(n => isFinite(n) && n >= 0.5 && n <= 50000);
-      const price = pm.length ? Math.round(pm[0] * 100) / 100 : null;
-      let rating = null;
-      const rPats = [
-        /(?:★|⭐)\\s*([1-5](?:\\.\\d)?)/,
-        /([1-5]\\.\\d)\\s*(?:\\/\\s*5|out of 5)/i,
-        /([1-5]\\.\\d)\\s*(?:\\([\\d.,]+[kK]?)/,
-        /(?:^|\\n)([45]\\.\\d)(?:\\n|\\s)/
-      ];
-      for (const p of rPats) {
-        const m = txt.match(p);
-        if (m) { const v = parseFloat(m[1]); if (v >= 1 && v <= 5) { rating = Math.round(v * 10) / 10; break; } }
+      let price = null, rating = null, sold = null, title = null;
+      const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (const s of ldScripts) {
+        try {
+          const obj = JSON.parse(s.textContent || '{}');
+          const arr = Array.isArray(obj) ? obj : [obj];
+          for (const it of arr) {
+            if (!title && it && it.name) title = String(it.name).trim();
+            if (rating === null && it && it.aggregateRating && it.aggregateRating.ratingValue) {
+              const rv = parseFloat(it.aggregateRating.ratingValue);
+              if (rv >= 1 && rv <= 5) rating = Math.round(rv * 10) / 10;
+            }
+            const off = it && it.offers ? (Array.isArray(it.offers) ? it.offers[0] : it.offers) : null;
+            if (price === null && off) {
+              const pv = parseFloat(off.price || off.lowPrice || '');
+              if (isFinite(pv) && pv >= 0.5 && pv <= 50000) price = Math.round(pv * 100) / 100;
+            }
+          }
+        } catch {}
       }
-      let sold = null;
-      const sm = txt.match(/(\\d+(?:[.,]\\d+)?)\\s*([kK]|rb)?\\+?\\s*(?:sold|terjual)/i);
-      if (sm) { sold = Math.round(parseFloat(sm[1].replace(/,/g, '')) * (sm[2] ? 1000 : 1)); }
       const h1 = document.querySelector('h1');
-      const title = ((h1 && h1.innerText) || document.title || '').replace(/\\s*\\|\\s*Shopee.*$/i, '').trim();
+      let scopeEl = h1 ? (h1.closest('section, main, div[class*="product"], div[class*="detail"]') || document.body) : document.body;
+      let txt = (scopeEl.innerText || document.body.innerText || '').slice(0, 8000);
+      if (txt.length < 40) txt = (document.body.innerText || '').slice(0, 8000);
+      if (price === null) {
+        const cleanLines = txt.split(/\\r?\\n/).filter(l => !/(?:min\\.?\\s*spend|voucher|cashback|off\\b|diskaun)/i.test(l)).join('\\n');
+        const pm = [...(cleanLines || txt).matchAll(/(?:RM|MYR)\\s?(\\d{1,3}(?:,\\d{3})*(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?)/gi)]
+          .map(m => parseFloat(m[1].replace(/,/g, '')))
+          .filter(n => isFinite(n) && n >= 0.5 && n <= 50000);
+        if (pm.length) price = Math.round(pm[0] * 100) / 100;
+      }
+      if (rating === null) {
+        const rPats = [
+          /(?:★|⭐)\\s*([1-5](?:\\.\\d)?)/,
+          /([1-5]\\.\\d)\\s*(?:\\/\\s*5|out of 5)/i,
+          /([1-5]\\.\\d)\\s*(?:\\r?\\n|\\s)*(?:[\\d.,]+[kK]?\\s*)?(?:ratings?|ulasan|penilaian|reviews?)/i,
+          /([1-5]\\.\\d)\\s*(?:\\([\\d.,]+[kK]?)/,
+          /(?:^|\\n)([1-5]\\.\\d)(?:\\n|\\s)/
+        ];
+        for (const p of rPats) {
+          const m = txt.match(p);
+          if (m) { const v = parseFloat(m[1]); if (v >= 1 && v <= 5) { rating = Math.round(v * 10) / 10; break; } }
+        }
+      }
+      const sm = txt.match(/(\\d+(?:[.,]\\d+)?)\\s*([kK]|rb|ribu)?\\+?\\s*(?:sold|terjual)/i);
+      if (sm) { sold = Math.round(parseFloat(sm[1].replace(/,/g, '')) * (sm[2] ? 1000 : 1)); }
+      if (!title) {
+        title = ((h1 && h1.innerText) || document.title || '').replace(/\\s*\\|\\s*Shopee.*$/i, '').trim();
+      }
       const payload = JSON.stringify({ __hja: 1, title, price, rating, sold, url: location.href });
       const toast = (msg, ok) => {
         const d = document.createElement('div');
         d.textContent = msg;
         d.style.cssText = 'position:fixed;top:18px;right:18px;z-index:2147483647;padding:12px 18px;border-radius:14px;font:700 13px sans-serif;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.25);background:' + (ok ? '#059669' : '#e11d48');
         document.body.appendChild(d);
-        setTimeout(() => d.remove(), 3500);
+        setTimeout(() => d.remove(), 4000);
       };
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(payload).then(
           () => toast('Copied! RM ' + (price ?? '?') + ' | ★ ' + (rating ?? '?') + ' — Now click Paste Sync in Admin', true),
-          () => { prompt('Copy this sync code and paste in Admin:', payload); }
+          () => { prompt('Copy this sync code and paste in Admin Quick Paste:', payload); }
         );
       } else {
-        prompt('Copy this sync code and paste in Admin:', payload);
+        prompt('Copy this sync code and paste in Admin Quick Paste:', payload);
       }
     } catch (e) {
       alert('HJA Sync error: ' + e.message);

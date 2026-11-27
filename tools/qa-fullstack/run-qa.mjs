@@ -298,8 +298,9 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
     page.on("console", lambda m: errors.append("console.error: " + m.text) if m.type == "error" else None)
 
-    page.goto("${BASE_URL}/", wait_until="networkidle")
-    page.wait_for_timeout(600)
+    page.goto("${BASE_URL}/", wait_until="domcontentloaded", timeout=15000)
+    page.locator("article").first.wait_for(timeout=10000)
+    page.wait_for_timeout(400)
 
     admin_btn_count = page.locator("aside").get_by_text("Admin").count()
     assert admin_btn_count == 0, f"Admin button should be hidden on PC sidebar, found {admin_btn_count}"
@@ -355,8 +356,9 @@ with sync_playwright() as p:
     # Mobile PWA Viewport (420x860)
     mctx = b.new_context(viewport={"width": 420, "height": 860})
     mpage = mctx.new_page()
-    mpage.goto("${BASE_URL}/", wait_until="networkidle")
-    mpage.wait_for_timeout(500)
+    mpage.goto("${BASE_URL}/", wait_until="domcontentloaded", timeout=15000)
+    mpage.locator("article").first.wait_for(timeout=10000)
+    mpage.wait_for_timeout(300)
     m_admin = mpage.locator("nav").get_by_text("Admin").count()
     assert m_admin == 0, f"Admin button should be hidden on Mobile nav, found {m_admin}"
     mcols = mpage.eval_on_selector("main .grid", "el => getComputedStyle(el).gridTemplateColumns.split(' ').length")

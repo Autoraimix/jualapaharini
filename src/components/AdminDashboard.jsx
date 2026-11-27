@@ -347,6 +347,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
         res.sold !== null && (!prev.purchase_count || prev.purchase_count === '0')
           ? String(res.sold)
           : prev.purchase_count,
+      ...(res.url && !prev[`${platform}_url`] ? { [`${platform}_url`]: res.url } : {}),
       ...(res.price !== null ? { [`${platform}_price`]: String(res.price) } : {}),
       ...(res.rating !== null ? { [`${platform}_rating`]: String(res.rating) } : {}),
     }));
@@ -1233,7 +1234,13 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                         <div className="flex items-center gap-2">
                           <a
                             href={buildSyncBookmarkletHref()}
-                            onClick={(e) => e.preventDefault()}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setStatusBanner({
+                                type: 'error',
+                                text: 'Do not click here — drag "⚡ HJA Sync" onto your browser Bookmarks Bar (press Ctrl+Shift+B to show it), or click Copy Code.',
+                              });
+                            }}
                             draggable
                             title="Drag this button to your browser bookmarks bar"
                             className="inline-flex cursor-grab items-center gap-1 rounded-full bg-[#F58C56] px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm"
