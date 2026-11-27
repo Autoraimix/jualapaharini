@@ -16,6 +16,9 @@ import {
   EyeOff,
   ImagePlus,
   FileSpreadsheet,
+  ClipboardPaste,
+  Bookmark,
+  Copy,
   X,
 } from 'lucide-react';
 import {
@@ -42,6 +45,7 @@ import {
   PLATFORM_LIST,
 } from '../utils/format';
 import { computeMultiPlatformReliability } from './ReliabilityMeter';
+import { buildSyncBookmarkletHref, parseCopiedProductText } from '../utils/smartExtract';
 
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -114,6 +118,9 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [fetchingMeta, setFetchingMeta] = useState('');
   const [platformMetaStatus, setPlatformMetaStatus] = useState({});
+  const [quickPasteOpen, setQuickPasteOpen] = useState({});
+  const [quickPasteText, setQuickPasteText] = useState({});
+  const [showBookmarklet, setShowBookmarklet] = useState(false);
   const [statusBanner, setStatusBanner] = useState(null);
 
   // Import / Export
@@ -321,6 +328,81 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       }
       return [...prev, platformId];
     });
+  }
+
+  function applyExtractedToPlatform(platform, rawText) {
+    const res = parseCopiedProductText(rawText);
+    if (!res.ok) {
+      setPlatformMetaStatus((prev) => ({
+        ...prev,
+        [platform]: { type: 'error', text: res.error },
+      }));
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      title: prev.title || res.title || '',
+      purchase_count:
+        res.sold !== null && (!prev.purchase_count || prev.purchase_count === '0')
+          ? String(res.sold)
+          : prev.purchase_count,
+      ...(res.price !== null ? { [`${platform}_price`]: String(res.price) } : {}),
+      ...(res.rating !== null ? { [`${platform}_rating`]: String(res.rating) } : {}),
+    }));
+
+    const parts = [];
+    if (res.price !== null) parts.push(`RM ${res.price.toFixed(2)}`);
+    if (res.rating !== null) parts.push(`★ ${res.rating.toFixed(1)}`);
+    if (res.sold !== null) parts.push(`${res.sold.toLocaleString()} sold`);
+
+    setPlatformMetaStatus((prev) => ({
+      ...prev,
+      [platform]: {
+        type: 'success',
+        text: `Synced from ${res.source === 'bookmarklet' ? 'Bookmarklet' : 'Quick Paste'}: ${parts.join(' • ')}`,
+      },
+    }));
+    setQuickPasteOpen((prev) => ({ ...prev, [platform]: false }));
+    setQuickPasteText((prev) => ({ ...prev, [platform]: '' }));
+  }
+
+  async function handleClipboardPasteSync(platform) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const clip = await navigator.clipboard.readText();
+        if (clip && clip.trim()) {
+          applyExtractedToPlatform(platform, clip);
+          return;
+        }
+      }
+      // Fallback: open inline paste box if clipboard permission denied or empty
+      setQuickPasteOpen((prev) => ({ ...prev, [platform]: true }));
+      setPlatformMetaStatus((prev) => ({
+        ...prev,
+        [platform]: {
+          type: 'error',
+          text: 'Clipboard empty or blocked — paste copied text into the box below.',
+        },
+      }));
+    } catch {
+      setQuickPasteOpen((prev) => ({ ...prev, [platform]: true }));
+    }
+  }
+
+  async function handleCopyBookmarklet() {
+    try {
+      await navigator.clipboard.writeText(buildSyncBookmarkletHref());
+      setStatusBanner({
+        type: 'success',
+        text: 'Bookmarklet code copied! Create a browser bookmark and paste it as the URL.',
+      });
+    } catch {
+      setStatusBanner({
+        type: 'error',
+        text: 'Could not copy automatically — drag the "⚡ HJA Sync" button to your bookmarks bar.',
+      });
+    }
   }
 
   async function handleAutoFetch(platform) {
@@ -1106,7 +1188,15 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                         Attach at least 1 link (up to 4: Shopee, TikTok, Lazada, Pinduoduo).
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowBookmarklet((s) => !s)}
+                        className="inline-flex items-center gap-1 rounded-full bg-[#FFF0E6] px-2.5 py-1 text-[11px] font-bold text-[#C85A21] hover:bg-[#ffe4d3]"
+                      >
+                        <Bookmark className="h-3 w-3" />
+                        Bookmarklet Sync
+                      </button>
                       {PLATFORM_LIST.map((pl) => {
                         const active = enabledPlatforms.includes(pl.id);
                         return (
@@ -1127,14 +1217,69 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                     </div>
                   </div>
 
+                  {showBookmarklet && (
+                    <div className="rounded-2xl border border-[#F58C56]/40 bg-white p-3.5 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="font-extrabold text-[#1D1C1A]">
+                            1-Click Browser Bookmarklet (Instant Shopee / TikTok / Lazada Sync)
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-[#6E655D]">
+                            1. Drag <strong>⚡ HJA Sync</strong> to your browser bookmarks bar (or
+                            click Copy Code). 2. Open any product tab in Chrome. 3. Click the
+                            bookmark, then click <strong>Paste Sync</strong> below.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={buildSyncBookmarkletHref()}
+                            onClick={(e) => e.preventDefault()}
+                            draggable
+                            title="Drag this button to your browser bookmarks bar"
+                            className="inline-flex cursor-grab items-center gap-1 rounded-full bg-[#F58C56] px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm"
+                          >
+                            ⚡ HJA Sync
+                          </a>
+                          <button
+                            type="button"
+                            onClick={handleCopyBookmarklet}
+                            className="inline-flex items-center gap-1 rounded-full bg-[#FAF7F2] px-3 py-1.5 text-[11px] font-bold text-[#1D1C1A] hover:bg-[#EFE9E0]"
+                          >
+                            <Copy className="h-3 w-3" /> Copy Code
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-2.5">
                     {PLATFORM_LIST.filter((pl) => enabledPlatforms.includes(pl.id)).map((pl) => (
                       <div key={pl.id} className={`rounded-2xl p-3 ${pl.cardBgTint}`}>
-                        <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                           <span className={`text-xs font-extrabold ${pl.textClass}`}>
                             {pl.name} Link, Price &amp; Rating
                           </span>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleClipboardPasteSync(pl.id)}
+                              className="inline-flex items-center gap-1 rounded-full bg-[#1E1D1B] px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-black"
+                            >
+                              <ClipboardPaste className="h-3 w-3 text-[#F58C56]" />
+                              Paste Sync
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setQuickPasteOpen((prev) => ({
+                                  ...prev,
+                                  [pl.id]: !prev[pl.id],
+                                }))
+                              }
+                              className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#6E655D] shadow-sm hover:text-[#1D1C1A]"
+                            >
+                              Quick Paste
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleAutoFetch(pl.id)}
@@ -1155,6 +1300,43 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                             )}
                           </div>
                         </div>
+
+                        {quickPasteOpen[pl.id] && (
+                          <div className="mb-2.5 rounded-xl bg-white p-2.5 shadow-sm">
+                            <textarea
+                              rows={2}
+                              value={quickPasteText[pl.id] || ''}
+                              onChange={(e) =>
+                                setQuickPasteText((prev) => ({
+                                  ...prev,
+                                  [pl.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="Paste copied product text from Shopee/TikTok app (e.g. 'Anker Earbuds RM79.90 ★ 4.9 14.8k sold') or Bookmarklet code..."
+                              className="w-full rounded-lg bg-[#FAF7F2] p-2 text-xs text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#F58C56]"
+                            />
+                            <div className="mt-1.5 flex justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setQuickPasteOpen((prev) => ({ ...prev, [pl.id]: false }))
+                                }
+                                className="rounded-lg bg-[#FAF7F2] px-2.5 py-1 text-[11px] font-bold text-[#6E655D]"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  applyExtractedToPlatform(pl.id, quickPasteText[pl.id] || '')
+                                }
+                                className="rounded-lg bg-[#F58C56] px-3 py-1 text-[11px] font-bold text-white"
+                              >
+                                Extract Price &amp; Rating
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                           <input

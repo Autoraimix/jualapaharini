@@ -256,6 +256,29 @@ async function run() {
     const postLogoutVerify = await fetch(`${BASE_URL}/api/admin/verify`, { headers: authHeaders });
     assert(postLogoutVerify.status === 401, 'Revoked token rejected after logout');
 
+    // Smart Extract & Bookmarklet unit tests
+    const { parseCopiedProductText, buildSyncBookmarkletHref } = await import(
+      '../../src/utils/smartExtract.js'
+    );
+    const parsedRaw = parseCopiedProductText(
+      'Anker Soundcore Earbuds\nRM79.90\n★ 4.9\n14.8k sold'
+    );
+    assert(
+      parsedRaw.ok && parsedRaw.price === 79.9 && parsedRaw.rating === 4.9 && parsedRaw.sold === 14800,
+      'Smart Quick-Paste extracts RM price, rating, and k-sold count'
+    );
+    const parsedBm = parseCopiedProductText(
+      JSON.stringify({ __hja: 1, title: 'BM Item', price: 35.5, rating: 4.8, sold: 920 })
+    );
+    assert(
+      parsedBm.ok && parsedBm.source === 'bookmarklet' && parsedBm.price === 35.5 && parsedBm.rating === 4.8,
+      'Bookmarklet JSON payload parses accurately'
+    );
+    assert(
+      buildSyncBookmarkletHref().startsWith('javascript:'),
+      'Bookmarklet href generates valid javascript: URI'
+    );
+
     // 3. Headless Browser E2E UI & Layout Audit
     console.log('\n3. Running Headless Browser E2E UI Audit (PC + Mobile)...');
     const pyScript = `
@@ -314,6 +337,15 @@ with sync_playwright() as p:
     assert all(opt.isascii() for opt in cat_opts), f"Category dropdown still contains icons/emojis: {cat_opts}"
     assert page.get_by_placeholder("https://... or /uploads/...").count() == 0, "Image URL input should be removed"
     assert page.locator("input[type='file'][accept='image/*']").count() == 1, "Image file upload input must exist"
+
+    # Test Bookmarklet toggle and Quick Paste extraction in UI
+    page.get_by_role("button", name="Bookmarklet Sync").click()
+    assert page.get_by_role("link", name="⚡ HJA Sync").is_visible(), "Bookmarklet drag pill should appear"
+    page.get_by_role("button", name="Quick Paste").first.click()
+    page.locator("textarea[placeholder*='Paste copied product text']").fill("Test Gadget RM65.50 ★ 4.9 2.5k sold")
+    page.get_by_role("button", name="Extract Price & Rating").click()
+    page.wait_for_timeout(200)
+    assert page.get_by_text("Synced from Quick Paste: RM 65.50 • ★ 4.9 • 2,500 sold").is_visible(), "Quick Paste should show green success banner"
 
     # Log out cleanly
     page.get_by_role("button", name="Log Out").click()
