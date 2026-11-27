@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -46,6 +46,30 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+function getWindowsPcIdleMs() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const py = [
+      'import ctypes',
+      'class LII(ctypes.Structure):',
+      "    _fields_=[('cbSize',ctypes.c_uint),('dwTime',ctypes.c_uint)]",
+      'lii=LII()',
+      'lii.cbSize=ctypes.sizeof(LII)',
+      'ok=ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii))',
+      'tick=ctypes.windll.kernel32.GetTickCount64() & 0xFFFFFFFF',
+      'print(((tick - lii.dwTime) & 0xFFFFFFFF) if ok else -1)',
+    ].join('\n');
+    const out = spawnSync('python', ['-c', py], { encoding: 'utf8', timeout: 2000 });
+    if (out.status === 0) {
+      const ms = Number.parseInt((out.stdout || '').trim(), 10);
+      if (Number.isFinite(ms) && ms >= 0) return ms;
+    }
+  } catch {
+    // Fallback to API-only activity tracking
+  }
+  return null;
+}
+
 function requireAdmin(req, res, next) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -60,18 +84,38 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ error: 'Admin authentication required.', code: 'AUTH_REQUIRED' });
   }
 
-  if (Date.now() - session.last_activity_at > ADMIN_IDLE_TIMEOUT_MS) {
-    db.prepare('DELETE FROM admin_sessions WHERE token = ?').run(token);
-    return res.status(401).json({
-      error: 'Session expired after 10 minutes of inactivity. Please sign in again.',
-      code: 'SESSION_EXPIRED',
-    });
+  const now = Date.now();
+  const isPassiveCheck = req.path === '/api/admin/verify' && req.query?.passive === '1';
+
+  if (now - session.last_activity_at > ADMIN_IDLE_TIMEOUT_MS) {
+    // Keep session alive while Real Chrome Bulk Sync is running or Windows PC was touched within timeout
+    let activeRecently = Boolean(chromeSyncJob?.running);
+    let nextRecordedActivity = now;
+
+    if (!activeRecently && ADMIN_IDLE_TIMEOUT_MS >= 15000) {
+      const pcIdleMs = getWindowsPcIdleMs();
+      if (pcIdleMs !== null && pcIdleMs < ADMIN_IDLE_TIMEOUT_MS) {
+        activeRecently = true;
+        nextRecordedActivity = now - pcIdleMs;
+      }
+    }
+
+    if (activeRecently) {
+      db.prepare('UPDATE admin_sessions SET last_activity_at = ? WHERE token = ?').run(
+        nextRecordedActivity,
+        token
+      );
+    } else {
+      db.prepare('DELETE FROM admin_sessions WHERE token = ?').run(token);
+      return res.status(401).json({
+        error: 'Session expired after 10 minutes of inactivity. Please sign in again.',
+        code: 'SESSION_EXPIRED',
+      });
+    }
+  } else if (!isPassiveCheck) {
+    db.prepare('UPDATE admin_sessions SET last_activity_at = ? WHERE token = ?').run(now, token);
   }
 
-  db.prepare('UPDATE admin_sessions SET last_activity_at = ? WHERE token = ?').run(
-    Date.now(),
-    token
-  );
   req.adminUser = session.username;
   req.adminToken = token;
   next();
@@ -469,6 +513,10 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
 });
 
 app.get('/api/admin/verify', requireAdmin, (req, res) => {
+  res.json({ ok: true, username: req.adminUser });
+});
+
+app.post('/api/admin/keepalive', requireAdmin, (req, res) => {
   res.json({ ok: true, username: req.adminUser });
 });
 

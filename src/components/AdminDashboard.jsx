@@ -37,6 +37,7 @@ import {
   fetchUrlMetadata,
   getChromeSyncStatus,
   getStoredToken,
+  keepAliveAdminSession,
   launchRealChrome,
   pollChromeBulkSync,
   setStoredToken,
@@ -216,34 +217,71 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     check();
   }, []);
 
-  // 10-minute AFK inactivity watcher while signed in
-  useEffect(() => {
-    if (!authed) {
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-      return;
-    }
+  const chromeRunningRef = useRef(false);
+  chromeRunningRef.current = Boolean(chromeJob?.running);
 
-    const resetIdleTimer = () => {
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-      idleTimerRef.current = setTimeout(async () => {
-        try {
-          await adminLogout();
-        } catch {
-          // Ignore
-        }
-        handleSessionExpired(
-          'Session expired after 10 minutes of inactivity. Please sign in again.'
-        );
-      }, IDLE_TIMEOUT_MS);
+  // Keep session alive whenever user is touching the PC or Real Chrome sync is running;
+  // only lock out if PC is completely untouched for 10 full minutes.
+  useEffect(() => {
+    if (!authed) return;
+
+    let lastBrowserInputAt = Date.now();
+    const markActivity = () => {
+      lastBrowserInputAt = Date.now();
     };
 
-    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
-    events.forEach((ev) => window.addEventListener(ev, resetIdleTimer, { passive: true }));
-    resetIdleTimer();
+    const events = [
+      'pointerdown',
+      'mousemove',
+      'keydown',
+      'scroll',
+      'wheel',
+      'touchstart',
+      'focus',
+    ];
+    events.forEach((ev) => window.addEventListener(ev, markActivity, { passive: true }));
+
+    const checkSession = async () => {
+      const recentlyTouchedTab = Date.now() - lastBrowserInputAt < 45000;
+      try {
+        if (recentlyTouchedTab || chromeRunningRef.current) {
+          await keepAliveAdminSession();
+        } else {
+          await verifyAdminSession(true);
+        }
+      } catch (err) {
+        if (err?.status === 401) {
+          if (err.code === 'SESSION_EXPIRED') {
+            handleSessionExpired(err.message);
+          } else {
+            setStoredToken('');
+            setAuthed(false);
+            setAnalytics(null);
+          }
+        }
+      }
+    };
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        lastBrowserInputAt = Date.now();
+        verifyAdminSession(true).catch((err) => {
+          if (err?.status === 401 && err.code === 'SESSION_EXPIRED') {
+            handleSessionExpired(err.message);
+          }
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+    window.addEventListener('focus', onVisibilityOrFocus);
+
+    const heartbeatId = setInterval(checkSession, 30000);
 
     return () => {
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-      events.forEach((ev) => window.removeEventListener(ev, resetIdleTimer));
+      clearInterval(heartbeatId);
+      events.forEach((ev) => window.removeEventListener(ev, markActivity));
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+      window.removeEventListener('focus', onVisibilityOrFocus);
     };
   }, [authed, handleSessionExpired]);
 

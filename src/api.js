@@ -77,8 +77,17 @@ export function adminLogout() {
   });
 }
 
-export function verifyAdminSession() {
-  return apiRequest('/api/admin/verify', { headers: adminHeaders() });
+export function verifyAdminSession(passive = false) {
+  return apiRequest(`/api/admin/verify${passive ? '?passive=1' : ''}`, {
+    headers: adminHeaders(),
+  });
+}
+
+export function keepAliveAdminSession() {
+  return apiRequest('/api/admin/keepalive', {
+    method: 'POST',
+    headers: adminHeaders(),
+  });
 }
 
 export function fetchAdminAnalytics() {

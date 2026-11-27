@@ -495,14 +495,25 @@ print("PLAYWRIGHT_QA_OK")
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: 'admin', password: 'qa_password_123' }),
       }).then((r) => r.json());
-      await new Promise((r) => setTimeout(r, 900));
-      const expiredRes = await fetch('http://localhost:3097/api/admin/verify', {
+      await new Promise((r) => setTimeout(r, 350));
+      const keepRes = await fetch('http://localhost:3097/api/admin/keepalive', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ilogin.token}` },
+      });
+      assert(keepRes.ok, 'Admin keepalive refreshes active session');
+      await new Promise((r) => setTimeout(r, 250));
+      const passiveRes = await fetch('http://localhost:3097/api/admin/verify?passive=1', {
+        headers: { Authorization: `Bearer ${ilogin.token}` },
+      });
+      assert(passiveRes.ok, 'Passive verify succeeds before timeout without inflating activity');
+      await new Promise((r) => setTimeout(r, 650));
+      const expiredRes = await fetch('http://localhost:3097/api/admin/verify?passive=1', {
         headers: { Authorization: `Bearer ${ilogin.token}` },
       });
       const expiredJson = await expiredRes.json();
       assert(
         expiredRes.status === 401 && expiredJson.code === 'SESSION_EXPIRED',
-        'Idle timeout triggers SESSION_EXPIRED after inactivity threshold'
+        'Idle timeout triggers SESSION_EXPIRED only after true inactivity threshold'
       );
     } finally {
       idleSrv.kill();
