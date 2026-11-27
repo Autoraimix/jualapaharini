@@ -620,60 +620,90 @@ export default function App() {
       </div>
 
       {/* Dark Floating Bottom Navigation Bar (Mobile / PWA only — Admin accessed via /admin) */}
-      <nav
-        aria-label="Primary navigation"
-        className="fixed bottom-3 left-1/2 z-40 w-[calc(100%-24px)] max-w-md -translate-x-1/2 rounded-[28px] bg-[#1E1D1B] px-5 py-2.5 shadow-[0_14px_38px_rgba(18,16,14,0.32)] md:hidden"
-      >
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => navigateTab('home')}
-            className={`flex flex-col items-center gap-0.5 px-3 py-1 transition ${
-              activeTab === 'home' ? 'text-[#F58C56]' : 'text-[#A69F98] hover:text-white'
-            }`}
+      {(() => {
+        const smartNavActive =
+          showSmartModal ||
+          (activeTab === 'home' &&
+            Boolean(
+              debouncedQuery || minPrice || maxPrice || verifiedOnly || platformFilter !== 'all'
+            ));
+        return (
+          <nav
+            aria-label="Primary navigation"
+            className="fixed bottom-3 left-1/2 z-40 w-[calc(100%-24px)] max-w-md -translate-x-1/2 rounded-[28px] bg-[#1E1D1B] px-4 py-2.5 shadow-[0_14px_38px_rgba(18,16,14,0.32)] md:hidden"
           >
-            <Home className="h-5 w-5" />
-            <span className="text-[10px] font-bold">Home</span>
-          </button>
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSmartModal(false);
+                  navigateTab('home');
+                }}
+                className={`flex flex-col items-center gap-0.5 rounded-2xl px-2.5 py-1 transition ${
+                  activeTab === 'home' && !smartNavActive
+                    ? 'text-[#F58C56]'
+                    : 'text-[#A69F98] hover:text-white'
+                }`}
+              >
+                <Home className="h-5 w-5" />
+                <span className="text-[10px] font-bold">Home</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => navigateTab('top')}
-            className={`flex flex-col items-center gap-0.5 px-3 py-1 transition ${
-              activeTab === 'top' ? 'text-[#F58C56]' : 'text-[#A69F98] hover:text-white'
-            }`}
-          >
-            <TrendingUp className="h-5 w-5" />
-            <span className="text-[10px] font-bold">Top Picks</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSmartModal(false);
+                  navigateTab('top');
+                }}
+                className={`flex flex-col items-center gap-0.5 rounded-2xl px-2.5 py-1 transition ${
+                  activeTab === 'top' && !showSmartModal
+                    ? 'text-[#F58C56]'
+                    : 'text-[#A69F98] hover:text-white'
+                }`}
+              >
+                <TrendingUp className="h-5 w-5" />
+                <span className="text-[10px] font-bold">Top Picks</span>
+              </button>
 
-          {/* Center Highlighted Orange Rounded Square Button */}
-          <button
-            type="button"
-            onClick={() => setShowSmartModal(true)}
-            aria-label="Open smart search"
-            className="-mt-3 flex h-13 w-13 items-center justify-center rounded-2xl bg-[#F58C56] text-[#1E1D1B] shadow-[0_8px_20px_rgba(245,140,86,0.45)] transition hover:scale-105 active:scale-95"
-          >
-            <Sparkles className="h-6 w-6" />
-          </button>
+              <button
+                type="button"
+                onClick={() => setShowSmartModal(true)}
+                aria-label="Smart Search"
+                aria-pressed={smartNavActive}
+                className={`flex flex-col items-center gap-0.5 rounded-2xl px-2.5 py-1 transition ${
+                  smartNavActive
+                    ? 'bg-[#F58C56]/15 text-[#F58C56]'
+                    : 'text-[#A69F98] hover:text-white'
+                }`}
+              >
+                <Sparkles className="h-5 w-5" />
+                <span className="whitespace-nowrap text-[10px] font-bold">Smart Search</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => navigateTab('saved')}
-            className={`relative flex flex-col items-center gap-0.5 px-3 py-1 transition ${
-              activeTab === 'saved' ? 'text-[#F58C56]' : 'text-[#A69F98] hover:text-white'
-            }`}
-          >
-            <Star className="h-5 w-5" />
-            <span className="text-[10px] font-bold">Saved</span>
-            {favorites.length > 0 && (
-              <span className="absolute right-1.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#F58C56] px-1 text-[9px] font-extrabold text-[#1E1D1B]">
-                {favorites.length}
-              </span>
-            )}
-          </button>
-        </div>
-      </nav>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSmartModal(false);
+                  navigateTab('saved');
+                }}
+                className={`relative flex flex-col items-center gap-0.5 rounded-2xl px-2.5 py-1 transition ${
+                  activeTab === 'saved' && !showSmartModal
+                    ? 'text-[#F58C56]'
+                    : 'text-[#A69F98] hover:text-white'
+                }`}
+              >
+                <Star className="h-5 w-5" />
+                <span className="text-[10px] font-bold">Saved</span>
+                {favorites.length > 0 && (
+                  <span className="absolute right-1 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#F58C56] px-1 text-[9px] font-extrabold text-[#1E1D1B]">
+                    {favorites.length}
+                  </span>
+                )}
+              </button>
+            </div>
+          </nav>
+        );
+      })()}
 
       {/* Product Detail Modal with Image + Shopee & TikTok Links + Automatic Price Sync */}
       {selectedProduct && (

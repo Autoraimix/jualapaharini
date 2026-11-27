@@ -631,6 +631,12 @@ with sync_playwright() as p:
     assert m_admin == 0, f"Admin button should be hidden on Mobile nav, found {m_admin}"
     mcols = mpage.eval_on_selector("main .grid", "el => getComputedStyle(el).gridTemplateColumns.split(' ').length")
     assert mcols == 1, f"Mobile Home should have 1 product per row, got {mcols}"
+    smart_nav = mpage.locator("nav").get_by_role("button", name="Smart Search")
+    assert smart_nav.is_visible(), "Mobile bottom nav must label Smart Search button"
+    assert smart_nav.get_attribute("aria-pressed") == "false", "Smart Search must NOT be selected by default on Home"
+    smart_nav.click()
+    mpage.wait_for_timeout(150)
+    assert smart_nav.get_attribute("aria-pressed") == "true", "Smart Search must highlight when clicked"
 
     b.close()
 assert len(errors) == 0, f"Console/Page errors: {errors}"
