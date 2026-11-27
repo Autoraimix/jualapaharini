@@ -517,6 +517,28 @@ with sync_playwright() as p:
     assert page.get_by_text("Run in Headless Chrome").is_visible(), "Headless Chrome toggle option must be visible"
     assert page.get_by_text("Auto-close Shopee Chrome").is_visible(), "Auto-close Shopee Chrome toggle option must be visible"
 
+    # Verify SQLite Catalog 10/page pagination, Next/Previous, See All Products & Smart Search
+    row_count_p1 = page.locator("[data-testid='admin-catalog-row']").count()
+    assert row_count_p1 == 10, f"SQLite Catalog Page 1 must show 10 products, got {row_count_p1}"
+    assert page.get_by_role("button", name="Next", exact=False).is_enabled(), "Next button must be enabled when > 10 products"
+    page.get_by_role("button", name="Next", exact=False).click()
+    page.wait_for_timeout(150)
+    assert page.get_by_text("Page 2 /").is_visible(), "Clicking Next should go to Page 2"
+    page.get_by_role("button", name="Previous", exact=False).click()
+    page.wait_for_timeout(150)
+    assert page.get_by_text("Page 1 /").is_visible(), "Clicking Previous should return to Page 1"
+    page.get_by_role("button", name="See All Products", exact=False).click()
+    page.wait_for_timeout(150)
+    assert page.locator("[data-testid='admin-catalog-row']").count() > 10, "See All Products must display all catalog items"
+    page.get_by_role("button", name="Show 10 / Page").click()
+    page.wait_for_timeout(150)
+    page.get_by_placeholder("Smart search (e.g. ps5, under 80, kipas, #011)").fill("earbuds under 80")
+    page.get_by_role("button", name="Smart Search").click()
+    page.wait_for_timeout(400)
+    assert page.locator("[data-testid='admin-catalog-row']").count() >= 1 and page.get_by_text("Anker Soundcore").is_visible(), "Admin Smart Search must filter matching products"
+    page.get_by_role("button", name="Clear catalog search").click()
+    page.wait_for_timeout(150)
+
     # Check Change Password menu field order
     page.get_by_role("button", name="Change Password").click()
     page.wait_for_timeout(200)

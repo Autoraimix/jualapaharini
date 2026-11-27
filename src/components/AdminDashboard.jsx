@@ -22,6 +22,9 @@ import {
   Globe,
   Play,
   Square,
+  Search,
+  ChevronLeft,
+  ChevronRight,
   X,
 } from 'lucide-react';
 import {
@@ -35,6 +38,7 @@ import {
   exportProductsCsv,
   exportProductsJson,
   fetchAdminAnalytics,
+  fetchProducts,
   fetchUrlMetadata,
   getChromeSyncStatus,
   getStoredToken,
@@ -155,6 +159,14 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   const [chromeHeadless, setChromeHeadless] = useState(false);
   const [chromeAutoClose, setChromeAutoClose] = useState(true);
   const [chromeJob, setChromeJob] = useState(null);
+
+  // SQLite Catalog Pagination & Smart Search
+  const CATALOG_PAGE_SIZE = 10;
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogSearchResults, setCatalogSearchResults] = useState(null);
+  const [searchingCatalog, setSearchingCatalog] = useState(false);
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [showAllCatalog, setShowAllCatalog] = useState(false);
 
   // Change Password menu fields (Username -> Current -> New -> Confirm)
   const [cpUsername, setCpUsername] = useState('');
@@ -844,6 +856,52 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       handleApiError(err);
     }
   }
+
+  async function handleCatalogSmartSearch(e) {
+    e?.preventDefault();
+    const trimmed = catalogQuery.trim();
+    if (!trimmed) {
+      setCatalogSearchResults(null);
+      setCatalogPage(1);
+      return;
+    }
+    setSearchingCatalog(true);
+    try {
+      const res = await fetchProducts({ q: trimmed, sort: 'latest' });
+      setCatalogSearchResults(res.products || []);
+      setCatalogPage(1);
+    } catch (err) {
+      handleApiError(err);
+    } finally {
+      setSearchingCatalog(false);
+    }
+  }
+
+  function handleClearCatalogSearch() {
+    setCatalogQuery('');
+    setCatalogSearchResults(null);
+    setCatalogPage(1);
+  }
+
+  // Keep filtered search results synced when catalog mutates (add/edit/delete/sync)
+  useEffect(() => {
+    if (catalogSearchResults === null) return;
+    const trimmed = catalogQuery.trim();
+    if (!trimmed) {
+      setCatalogSearchResults(null);
+      return;
+    }
+    let active = true;
+    fetchProducts({ q: trimmed, sort: 'latest' })
+      .then((res) => {
+        if (active) setCatalogSearchResults(res.products || []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products]);
 
   function handleDownloadSampleCsv() {
     const sample = [
@@ -1923,71 +1981,196 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
             </section>
           )}
 
-          {/* Products Table / List */}
-          <section className="rounded-[28px] bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-[#1D1C1A]">
-                SQLite Catalog ({products.length})
-              </h3>
-              <button
-                type="button"
-                onClick={onCatalogChanged}
-                className="inline-flex items-center gap-1 text-xs font-bold text-[#F58C56]"
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Refresh
-              </button>
-            </div>
+          {/* Products Table / List with Smart Search + 10/page Pagination */}
+          {(() => {
+            const activeCatalogList = catalogSearchResults !== null ? catalogSearchResults : products;
+            const totalCatalogCount = activeCatalogList.length;
+            const totalPages = Math.max(1, Math.ceil(totalCatalogCount / CATALOG_PAGE_SIZE));
+            const safePage = Math.min(catalogPage, totalPages);
+            const visibleCatalogProducts = showAllCatalog
+              ? activeCatalogList
+              : activeCatalogList.slice(
+                  (safePage - 1) * CATALOG_PAGE_SIZE,
+                  safePage * CATALOG_PAGE_SIZE
+                );
+            const startItem =
+              totalCatalogCount === 0
+                ? 0
+                : showAllCatalog
+                  ? 1
+                  : (safePage - 1) * CATALOG_PAGE_SIZE + 1;
+            const endItem = showAllCatalog
+              ? totalCatalogCount
+              : Math.min(totalCatalogCount, safePage * CATALOG_PAGE_SIZE);
 
-            <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
-              {products.map((prod) => (
-                <div
-                  key={prod.id}
-                  className="flex items-center gap-3 rounded-2xl bg-[#FAF7F2] p-3"
-                >
-                  <img
-                    src={prod.image_url}
-                    alt={prod.title}
-                    className="h-12 w-12 shrink-0 rounded-xl object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-bold text-[#8C837A]">{prod.code}</span>
-                      <span className="truncate text-sm font-bold text-[#1D1C1A]">
-                        {prod.title}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex flex-wrap gap-2 text-[11px] text-[#6E655D]">
-                      {getActivePlatforms(prod).map((pl) => (
-                        <span key={pl.id}>
-                          {pl.shortName}: {formatMYR(pl.price)}
-                        </span>
-                      ))}
-                      <span>{formatCompactSold(prod.purchase_count)}</span>
-                      <span>★ {prod.reliability_score}</span>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
+            return (
+              <section className="rounded-[28px] bg-white p-5 shadow-sm">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
+                  <h3 className="text-sm font-extrabold text-[#1D1C1A]">
+                    SQLite Catalog (
+                    {catalogSearchResults !== null
+                      ? `${totalCatalogCount} of ${products.length}`
+                      : products.length}
+                    )
+                  </h3>
+
+                  <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:max-w-xl">
+                    <form
+                      onSubmit={handleCatalogSmartSearch}
+                      className="flex min-w-[220px] flex-1 items-center gap-1.5 rounded-2xl bg-[#FAF7F2] px-3 py-1.5 focus-within:ring-2 focus-within:ring-[#F58C56]"
+                    >
+                      <Search className="h-3.5 w-3.5 shrink-0 text-[#8C837A]" />
+                      <input
+                        type="text"
+                        value={catalogQuery}
+                        onChange={(e) => setCatalogQuery(e.target.value)}
+                        placeholder="Smart search (e.g. ps5, under 80, kipas, #011)"
+                        className="w-full bg-transparent text-xs font-semibold text-[#1D1C1A] placeholder:text-[#A39A90] focus:outline-none"
+                      />
+                      {catalogQuery && (
+                        <button
+                          type="button"
+                          onClick={handleClearCatalogSearch}
+                          aria-label="Clear catalog search"
+                          className="rounded-full p-0.5 text-[#8C837A] hover:bg-[#EFE9E0] hover:text-[#1D1C1A]"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={searchingCatalog}
+                        className="shrink-0 rounded-xl bg-[#1E1D1B] px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-black disabled:opacity-60"
+                      >
+                        {searchingCatalog ? 'Searching...' : 'Smart Search'}
+                      </button>
+                    </form>
+
                     <button
                       type="button"
-                      onClick={() => openEditForm(prod)}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-[#1D1C1A] shadow-sm hover:bg-[#FFF0E6]"
-                      aria-label="Edit"
+                      onClick={onCatalogChanged}
+                      className="inline-flex items-center gap-1 rounded-xl bg-[#FAF7F2] px-3 py-2 text-xs font-bold text-[#F58C56] hover:bg-[#EFE9E0]"
                     >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(prod)}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-rose-600 shadow-sm hover:bg-rose-50"
-                      aria-label="Delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <RefreshCw className="h-3.5 w-3.5" /> Refresh
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
+
+                {visibleCatalogProducts.length === 0 ? (
+                  <div className="rounded-2xl bg-[#FAF7F2] p-6 text-center text-xs font-semibold text-[#8C837A]">
+                    No products matched your smart search.{' '}
+                    {catalogSearchResults !== null && (
+                      <button
+                        type="button"
+                        onClick={handleClearCatalogSearch}
+                        className="ml-1 font-bold text-[#F58C56] underline"
+                      >
+                        Reset search
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+                    {visibleCatalogProducts.map((prod) => (
+                      <div
+                        key={prod.id}
+                        data-testid="admin-catalog-row"
+                        className="flex items-center gap-3 rounded-2xl bg-[#FAF7F2] p-3"
+                      >
+                        <img
+                          src={prod.image_url}
+                          alt={prod.title}
+                          className="h-12 w-12 shrink-0 rounded-xl bg-white object-contain p-0.5"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-[#8C837A]">
+                              {prod.code}
+                            </span>
+                            <span className="truncate text-sm font-bold text-[#1D1C1A]">
+                              {prod.title}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap gap-2 text-[11px] text-[#6E655D]">
+                            {getActivePlatforms(prod).map((pl) => (
+                              <span key={pl.id}>
+                                {pl.shortName}: {formatMYR(pl.price)}
+                              </span>
+                            ))}
+                            <span>{formatCompactSold(prod.purchase_count)}</span>
+                            <span>★ {prod.reliability_score}</span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditForm(prod)}
+                            className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-[#1D1C1A] shadow-sm hover:bg-[#FFF0E6]"
+                            aria-label="Edit"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(prod)}
+                            className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-rose-600 shadow-sm hover:bg-rose-50"
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {totalCatalogCount > 0 && (
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#F3EDE4] pt-3">
+                    <span className="text-xs font-semibold text-[#8C837A]">
+                      Showing {startItem}–{endItem} of {totalCatalogCount} products
+                    </span>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!showAllCatalog && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setCatalogPage((p) => Math.max(1, p - 1))}
+                            disabled={safePage <= 1}
+                            className="inline-flex items-center gap-1 rounded-xl bg-[#FAF7F2] px-3 py-1.5 text-xs font-bold text-[#1D1C1A] transition hover:bg-[#EFE9E0] disabled:opacity-40"
+                          >
+                            <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                          </button>
+                          <span className="px-2 text-xs font-bold text-[#6E655D]">
+                            Page {safePage} / {totalPages}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setCatalogPage((p) => Math.min(totalPages, p + 1))}
+                            disabled={safePage >= totalPages}
+                            className="inline-flex items-center gap-1 rounded-xl bg-[#FAF7F2] px-3 py-1.5 text-xs font-bold text-[#1D1C1A] transition hover:bg-[#EFE9E0] disabled:opacity-40"
+                          >
+                            Next <ChevronRight className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAllCatalog((v) => !v);
+                          setCatalogPage(1);
+                        }}
+                        className="rounded-xl bg-[#FFF0E6] px-3 py-1.5 text-xs font-bold text-[#C85A21] transition hover:bg-[#FFE4D1]"
+                      >
+                        {showAllCatalog ? 'Show 10 / Page' : `See All Products (${totalCatalogCount})`}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            );
+          })()}
         </>
       )}
     </div>
