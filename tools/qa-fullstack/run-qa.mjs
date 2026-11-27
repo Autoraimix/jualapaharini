@@ -315,6 +315,17 @@ async function run() {
       'gallery_images persists in SQLite across creates'
     );
 
+    // Public notifications must record admin updates cleanly without mentioning Shopee/TikTok
+    const notifRes = await fetch(`${BASE_URL}/api/notifications`).then((r) => r.json());
+    const notifText = JSON.stringify(notifRes.items || []).toLowerCase();
+    assert(
+      notifRes.latestId > 0 &&
+        notifRes.items.some((n) => n.message.includes('PS5 Gallery QA Item')) &&
+        !notifText.includes('shopee') &&
+        !notifText.includes('tiktok'),
+      'Public /api/notifications logs admin updates without platform names'
+    );
+
     // Test chrome_sync.py DOM extractor against exact Shopee PDP HTML (.nt0EaI, .Ocv3B8, .C21rQm, .product-rating-overview__rating-score)
     const sampleHtmlPath = path.join(ROOT, 'data', 'qa_shopee_sample.html');
     fs.writeFileSync(
@@ -518,6 +529,14 @@ with sync_playwright() as p:
 
     broken_imgs = page.evaluate("Array.from(document.querySelectorAll('img')).filter(i => i.complete && i.naturalWidth === 0).length")
     assert broken_imgs == 0, f"Found {broken_imgs} broken images on PC Home"
+
+    # Bell notification panel shows live admin updates without mentioning Shopee/TikTok
+    assert page.get_by_label("Unread updates").is_visible(), "Unread notification dot must appear when admin updates exist"
+    page.get_by_role("button", name="Store updates").click()
+    page.get_by_text("Latest Store Updates").wait_for(timeout=5000)
+    assert page.get_by_text("New Deal Added").first.is_visible(), "Admin updates should list in Latest Store Updates"
+    assert page.get_by_label("Unread updates").count() == 0, "Unread dot should clear once opened"
+    page.get_by_role("button", name="Close updates").click()
 
     # Open first product modal, verify Full view zoom lightbox covers true full viewport & Refresh Prices
     page.locator("article").first.click()

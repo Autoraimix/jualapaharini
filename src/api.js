@@ -34,6 +34,10 @@ export function fetchStoreInfo() {
   return apiRequest('/api/store-info');
 }
 
+export function fetchNotifications() {
+  return apiRequest('/api/notifications');
+}
+
 export function fetchProducts(params = {}) {
   const qs = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {

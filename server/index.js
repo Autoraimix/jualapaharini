@@ -289,10 +289,32 @@ function sanitizeProductInput(body, existing = null, fallbackCode = null) {
   };
 }
 
+function recordCatalogNotification({ productId = null, code = '', title, message, kind = 'update' }) {
+  try {
+    db.prepare(
+      'INSERT INTO notifications (product_id, code, title, message, kind) VALUES (?, ?, ?, ?, ?)'
+    ).run(productId, String(code || ''), String(title || 'Catalog Updated'), String(message || ''), kind);
+    // Retain latest 100 notifications
+    db.prepare(
+      'DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY id DESC LIMIT 100)'
+    ).run();
+  } catch {
+    // Non-fatal notification log safeguard
+  }
+}
+
 // ---------- Public Endpoints ----------
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, timestamp: new Date().toISOString() });
+});
+
+app.get('/api/notifications', (_req, res) => {
+  const items = db
+    .prepare('SELECT id, product_id, code, title, message, kind, created_at FROM notifications ORDER BY id DESC LIMIT 15')
+    .all();
+  const latestId = items.length > 0 ? items[0].id : 0;
+  res.json({ latestId, items });
 });
 
 app.get('/api/store-info', (_req, res) => {
@@ -475,6 +497,14 @@ app.post('/api/admin/sync-all', requireAdmin, async (_req, res) => {
     }
   }
 
+  if (syncedProducts > 0) {
+    recordCatalogNotification({
+      title: 'Prices Refreshed',
+      message: `Updated price comparison details across ${syncedProducts} product(s).`,
+      kind: 'sync',
+    });
+  }
+
   res.json({
     total: products.length,
     syncedProducts,
@@ -637,6 +667,13 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
       )
       .run(data);
     const created = db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);
+    recordCatalogNotification({
+      productId: created.id,
+      code: created.code,
+      title: `New Deal Added • ${created.code}`,
+      message: `${created.title} is now available for price comparison.`,
+      kind: 'create',
+    });
     res.status(201).json({ product: created });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -689,6 +726,13 @@ app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
     ).run({ ...data, id: existing.id });
 
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(existing.id);
+    recordCatalogNotification({
+      productId: updated.id,
+      code: updated.code,
+      title: `Deal Updated • ${updated.code}`,
+      message: `${updated.title} prices and details were updated.`,
+      kind: 'update',
+    });
     res.json({ product: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -696,8 +740,18 @@ app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
 });
 
 app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
+  const existing = db.prepare('SELECT id, code, title FROM products WHERE id = ?').get(req.params.id);
   const info = db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Product not found.' });
+  if (existing) {
+    db.prepare('DELETE FROM notifications WHERE product_id = ?').run(existing.id);
+    recordCatalogNotification({
+      code: existing.code,
+      title: `Deal Removed • ${existing.code}`,
+      message: `${existing.title} was removed from the catalog.`,
+      kind: 'delete',
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -799,6 +853,13 @@ app.post('/api/admin/import', requireAdmin, (req, res) => {
   });
 
   tx(rawRows);
+  if (importedCount > 0) {
+    recordCatalogNotification({
+      title: 'Catalog Updated',
+      message: `${importedCount} product deal(s) were added or refreshed.`,
+      kind: 'import',
+    });
+  }
   res.json({ importedCount, skipped });
 });
 
@@ -991,6 +1052,13 @@ function upsertChromeExtractedProduct({ url, platform, data, categorySlug }) {
     );
 
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(existing.id);
+    recordCatalogNotification({
+      productId: updated.id,
+      code: updated.code,
+      title: `Deal Updated • ${updated.code}`,
+      message: `${updated.title} prices and details were updated.`,
+      kind: 'update',
+    });
     return { action: 'updated', product: updated };
   }
 
@@ -1038,6 +1106,13 @@ function upsertChromeExtractedProduct({ url, platform, data, categorySlug }) {
     .run(payload);
 
   const created = db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);
+  recordCatalogNotification({
+    productId: created.id,
+    code: created.code,
+    title: `New Deal Added • ${created.code}`,
+    message: `${created.title} is now available for price comparison.`,
+    kind: 'create',
+  });
   return { action: 'created', product: created };
 }
 

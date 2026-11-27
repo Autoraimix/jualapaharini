@@ -10,7 +10,7 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react';
-import { fetchProducts, fetchStoreInfo } from './api';
+import { fetchNotifications, fetchProducts, fetchStoreInfo } from './api';
 import { ProductCard } from './components/ProductCard';
 import { ProductModal } from './components/ProductModal';
 import { SmartSearchModal } from './components/SmartSearchModal';
@@ -18,6 +18,7 @@ import { TopPicksView } from './components/TopPicksView';
 import { AdminDashboard } from './components/AdminDashboard';
 
 const FAVORITES_KEY = 'hja_favorites';
+const LAST_SEEN_NOTIF_KEY = 'hja_last_seen_notif_id';
 
 const CATEGORY_IMAGES = {
   all: '/categories/all.jpg',
@@ -71,6 +72,15 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showSmartModal, setShowSmartModal] = useState(false);
   const [showDropsToast, setShowDropsToast] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [latestNotifId, setLatestNotifId] = useState(0);
+  const [lastSeenNotifId, setLastSeenNotifId] = useState(() => {
+    try {
+      return Number(localStorage.getItem(LAST_SEEN_NOTIF_KEY) || 0);
+    } catch {
+      return 0;
+    }
+  });
 
   // PWA install prompt
   const [installPrompt, setInstallPrompt] = useState(null);
@@ -170,10 +180,72 @@ export default function App() {
     }
   }, []);
 
+  const loadNotifications = useCallback(async () => {
+    try {
+      const res = await fetchNotifications();
+      setNotifications(res.items || []);
+      setLatestNotifId(Number(res.latestId || 0));
+    } catch {
+      // Non-blocking notification fetch
+    }
+  }, []);
+
   useEffect(() => {
     loadStoreMeta();
     loadFullCatalog();
-  }, [loadStoreMeta, loadFullCatalog]);
+    loadNotifications();
+  }, [loadStoreMeta, loadFullCatalog, loadNotifications]);
+
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') {
+        loadNotifications();
+      }
+    };
+    const intervalId = setInterval(refreshIfVisible, 30000);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, [loadNotifications]);
+
+  function markNotificationsRead(targetId = latestNotifId) {
+    setLastSeenNotifId(targetId);
+    try {
+      localStorage.setItem(LAST_SEEN_NOTIF_KEY, String(targetId));
+    } catch {
+      // Ignore storage failure
+    }
+  }
+
+  function toggleNotificationsPanel() {
+    setShowDropsToast((prev) => {
+      const next = !prev;
+      if (next && latestNotifId > 0) {
+        markNotificationsRead(latestNotifId);
+      }
+      return next;
+    });
+  }
+
+  async function handleNotificationClick(notif) {
+    if (!notif?.product_id) return;
+    let found =
+      products.find((p) => p.id === notif.product_id) ||
+      allProductsCache.find((p) => p.id === notif.product_id);
+    if (!found) {
+      await loadFullCatalog();
+      await loadProducts();
+    }
+    found =
+      products.find((p) => p.id === notif.product_id) ||
+      allProductsCache.find((p) => p.id === notif.product_id);
+    if (found) {
+      setSelectedProduct(found);
+      setShowDropsToast(false);
+    }
+  }
 
   useEffect(() => {
     loadProducts();
@@ -344,30 +416,66 @@ export default function App() {
               )}
               <button
                 type="button"
-                onClick={() => setShowDropsToast((v) => !v)}
-                aria-label="Latest drops"
+                onClick={toggleNotificationsPanel}
+                aria-label="Store updates"
                 className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1D1C1A] shadow-[0_6px_18px_rgba(32,24,16,0.06)] transition hover:bg-[#FAF7F2]"
               >
                 <Bell className="h-4 w-4" />
-                <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#F58C56]" />
+                {latestNotifId > lastSeenNotifId && (
+                  <span
+                    aria-label="Unread updates"
+                    className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#F58C56]"
+                  />
+                )}
               </button>
             </div>
           </header>
 
-        {/* Latest Drop Banner */}
+        {/* Live Store Updates / Admin Notifications Panel */}
         {showDropsToast && (
-          <div className="mb-4 flex items-center justify-between gap-3 rounded-[22px] bg-[#1E1D1B] px-4 py-3 text-xs text-white shadow-md">
-            <div>
-              <span className="font-bold text-[#F58C56]">Fresh Picks Ready!</span> Click any item to
-              auto-check & compare Shopee vs TikTok Shop prices.
+          <div className="mb-4 rounded-[22px] bg-[#1E1D1B] p-4 text-xs text-white shadow-md">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Bell className="h-3.5 w-3.5 text-[#F58C56]" />
+                <span className="font-extrabold text-[#F58C56]">Latest Store Updates</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDropsToast(false)}
+                aria-label="Close updates"
+                className="shrink-0 text-[#A39A91] hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowDropsToast(false)}
-              className="shrink-0 text-[#A39A91] hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
+
+            {notifications.length === 0 ? (
+              <div className="text-[#D6CFC7]">
+                Fresh deals are ready! Click any product to compare prices across online stores.
+              </div>
+            ) : (
+              <div className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                {notifications.map((n) => (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => handleNotificationClick(n)}
+                    disabled={!n.product_id}
+                    className={`flex w-full items-start justify-between gap-2 rounded-xl bg-white/5 px-3 py-2 text-left transition ${
+                      n.product_id ? 'cursor-pointer hover:bg-white/10' : 'cursor-default'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-white">{n.title}</div>
+                      <div className="truncate text-[11px] text-[#C8C0B7]">{n.message}</div>
+                    </div>
+                    {n.product_id ? (
+                      <span className="shrink-0 text-[10px] font-bold text-[#F58C56]">View →</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -617,6 +725,7 @@ export default function App() {
               await loadProducts();
               await loadFullCatalog();
               await loadStoreMeta();
+              await loadNotifications();
             }}
           />
         )}

@@ -190,6 +190,16 @@ export function initDatabase() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER,
+      code TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'update',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   const adminCount = db.prepare('SELECT COUNT(*) AS count FROM admin_users').get().count;
@@ -207,7 +217,7 @@ export function initDatabase() {
     ['store_handle', '@harinijualapa'],
     [
       'store_tagline',
-      'Curated daily viral finds — compare Shopee & TikTok Shop prices in one tap.',
+      'Compare prices across online stores and find the best deal in one place.',
     ],
   ];
 
