@@ -26,11 +26,13 @@ export function ProductModal({
   onProductUpdated,
 }) {
   const [product, setProduct] = useState(initialProduct);
+  const [selectedImage, setSelectedImage] = useState(initialProduct?.image_url || '');
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState(null); // { type: 'success' | 'error', text: string }
 
   useEffect(() => {
     setProduct(initialProduct);
+    setSelectedImage(initialProduct?.image_url || '');
   }, [initialProduct]);
 
   useEffect(() => {
@@ -163,19 +165,52 @@ export function ProductModal({
           </div>
         </div>
 
-        {/* Product Hero Image */}
-        <div className="relative mb-4 aspect-[4/3] w-full overflow-hidden rounded-[24px] bg-white shadow-sm">
-          <img
-            src={product.image_url}
-            alt={product.title}
-            className="h-full w-full object-cover"
-          />
-          {savings >= 1 && cheapestName && (
-            <div className="absolute bottom-3 left-3 rounded-full bg-[#1E1D1B]/90 px-3.5 py-1.5 text-xs font-bold text-white backdrop-blur-sm">
-              Best deal: {cheapestName} saves RM {savings.toFixed(2)}
+        {/* Product Hero Image + Extracted Gallery Thumbnails */}
+        {(() => {
+          let parsedGallery = [];
+          try {
+            const raw = product.gallery_images;
+            parsedGallery = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+          } catch {
+            parsedGallery = [];
+          }
+          const gallery = [...new Set([product.image_url, ...parsedGallery].filter(Boolean))];
+          const activeSrc = selectedImage || product.image_url;
+          return (
+            <div className="mb-4">
+              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[24px] bg-white shadow-sm">
+                <img
+                  src={activeSrc}
+                  alt={product.title}
+                  className="h-full w-full object-cover"
+                />
+                {savings >= 1 && cheapestName && (
+                  <div className="absolute bottom-3 left-3 rounded-full bg-[#1E1D1B]/90 px-3.5 py-1.5 text-xs font-bold text-white backdrop-blur-sm">
+                    Best deal: {cheapestName} saves RM {savings.toFixed(2)}
+                  </div>
+                )}
+              </div>
+              {gallery.length > 1 && (
+                <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1">
+                  {gallery.map((imgUrl, idx) => (
+                    <button
+                      key={imgUrl + idx}
+                      type="button"
+                      onClick={() => setSelectedImage(imgUrl)}
+                      className={`h-14 w-14 shrink-0 overflow-hidden rounded-xl border-2 bg-white transition ${
+                        activeSrc === imgUrl
+                          ? 'border-[#F58C56] ring-2 ring-[#F58C56]/25'
+                          : 'border-transparent opacity-75 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={imgUrl} alt="" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* Title & Trust Metrics */}
         <div className="mb-4 rounded-[24px] bg-white p-4 shadow-[0_6px_20px_rgba(32,24,16,0.04)]">

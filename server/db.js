@@ -47,6 +47,7 @@ export function initDatabase() {
       category_slug TEXT NOT NULL DEFAULT 'tech',
       tags TEXT NOT NULL DEFAULT '',
       image_url TEXT NOT NULL,
+      gallery_images TEXT NOT NULL DEFAULT '[]',
       shopee_url TEXT NOT NULL DEFAULT '',
       shopee_price REAL,
       shopee_price_status TEXT NOT NULL DEFAULT 'manual',
@@ -107,6 +108,7 @@ export function initDatabase() {
     ['pinduoduo_price_status', "TEXT NOT NULL DEFAULT 'manual'"],
     ['pinduoduo_rating', 'REAL'],
     ['pinduoduo_clicks', 'INTEGER NOT NULL DEFAULT 0'],
+    ['gallery_images', "TEXT NOT NULL DEFAULT '[]'"],
   ];
   let addedMultiPlatform = false;
   for (const [colName, colDef] of extraCols) {

@@ -19,6 +19,9 @@ import {
   ClipboardPaste,
   Bookmark,
   Copy,
+  Globe,
+  Play,
+  Square,
   X,
 } from 'lucide-react';
 import {
@@ -32,8 +35,13 @@ import {
   exportProductsJson,
   fetchAdminAnalytics,
   fetchUrlMetadata,
+  getChromeSyncStatus,
   getStoredToken,
+  launchRealChrome,
+  pollChromeBulkSync,
   setStoredToken,
+  startChromeBulkSync,
+  stopChromeBulkSync,
   syncAllProducts,
   updateProduct,
   uploadProductImage,
@@ -130,6 +138,19 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
+
+  // Real Chrome CDP Bulk Sync
+  const [showChromeSync, setShowChromeSync] = useState(false);
+  const [chromeCdpState, setChromeCdpState] = useState({
+    connected: false,
+    browser: null,
+    chromeInstalled: true,
+  });
+  const [launchingChrome, setLaunchingChrome] = useState(false);
+  const [chromeUrlsText, setChromeUrlsText] = useState('');
+  const [chromeCategory, setChromeCategory] = useState('tech');
+  const [chromeDelaySec, setChromeDelaySec] = useState('4.5');
+  const [chromeJob, setChromeJob] = useState(null);
 
   // Change Password menu fields (Username -> Current -> New -> Confirm)
   const [cpUsername, setCpUsername] = useState('');
@@ -665,6 +686,101 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     }
   }
 
+  const refreshChromeCdpStatus = useCallback(async () => {
+    try {
+      const info = await getChromeSyncStatus();
+      setChromeCdpState(info);
+    } catch {
+      // Ignore silent status check errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authed || !showChromeSync) return;
+    refreshChromeCdpStatus();
+    pollChromeBulkSync()
+      .then((job) => setChromeJob(job))
+      .catch(() => {});
+  }, [authed, showChromeSync, refreshChromeCdpStatus]);
+
+  useEffect(() => {
+    if (!authed || !chromeJob?.running) return;
+    const timer = setInterval(async () => {
+      try {
+        const nextJob = await pollChromeBulkSync();
+        setChromeJob(nextJob);
+        if (!nextJob.running || nextJob.completed > (chromeJob?.completed || 0)) {
+          await onCatalogChanged();
+          loadAnalytics();
+        }
+        if (!nextJob.running) {
+          if (nextJob.paused) {
+            setStatusBanner({
+              type: 'error',
+              text: nextJob.pauseReason || 'Chrome sync paused for manual verification.',
+            });
+          } else if (nextJob.error) {
+            setStatusBanner({ type: 'error', text: nextJob.error });
+          } else if (nextJob.total > 0) {
+            setStatusBanner({
+              type: nextJob.succeeded > 0 ? 'success' : 'error',
+              text: `Real Chrome Sync finished: ${nextJob.succeeded} saved, ${nextJob.failed} failed out of ${nextJob.total} link(s).`,
+            });
+          }
+        }
+      } catch (err) {
+        handleApiError(err);
+      }
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [authed, chromeJob?.running, chromeJob?.completed, handleApiError, onCatalogChanged]);
+
+  async function handleLaunchRealChrome() {
+    setLaunchingChrome(true);
+    setStatusBanner(null);
+    try {
+      const res = await launchRealChrome();
+      await refreshChromeCdpStatus();
+      setStatusBanner({
+        type: res.connected ? 'success' : 'error',
+        text: res.message,
+      });
+    } catch (err) {
+      handleApiError(err);
+    } finally {
+      setLaunchingChrome(false);
+    }
+  }
+
+  async function handleStartChromeSync(overrideUrls = null) {
+    const urlsPayload = overrideUrls || chromeUrlsText;
+    setStatusBanner(null);
+    try {
+      const job = await startChromeBulkSync({
+        urls: urlsPayload,
+        categorySlug: chromeCategory,
+        delaySeconds: Number(chromeDelaySec || 4.5),
+      });
+      setChromeJob(job);
+      setStatusBanner({
+        type: 'success',
+        text: `Started Real Chrome Sync for ${job.total} link(s)...`,
+      });
+    } catch (err) {
+      handleApiError(err);
+    }
+  }
+
+  async function handleStopChromeSync() {
+    try {
+      const job = await stopChromeBulkSync();
+      setChromeJob(job);
+      setStatusBanner({ type: 'error', text: 'Real Chrome Sync stopped by admin.' });
+    } catch (err) {
+      handleApiError(err);
+    }
+  }
+
   function handleDownloadSampleCsv() {
     const sample = [
       'code,title,description,category_slug,tags,image_url,shopee_url,shopee_price,shopee_rating,tiktok_url,tiktok_price,tiktok_rating,lazada_url,lazada_price,lazada_rating,pinduoduo_url,pinduoduo_price,pinduoduo_rating,purchase_count',
@@ -924,6 +1040,13 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
               <RefreshCw className={`h-3.5 w-3.5 ${syncingAll ? 'animate-spin text-[#F58C56]' : ''}`} />
               {syncingAll ? 'Syncing All...' : 'Sync All Prices'}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowChromeSync((s) => !s)}
+              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FFF0E6] px-4 py-2.5 text-xs font-bold text-[#C85A21] hover:bg-[#FFE4D1]"
+            >
+              <Globe className="h-3.5 w-3.5" /> Real Chrome Bulk Sync
+            </button>
           </div>
         )}
       </section>
@@ -1006,6 +1129,207 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       {/* CATALOG MENU CONTENT */}
       {adminMenu === 'catalog' && (
         <>
+          {/* Real Chrome Bulk Sync Drawer */}
+          {showChromeSync && (
+            <section className="rounded-[28px] bg-white p-5 shadow-sm">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="flex items-center gap-2 text-sm font-extrabold text-[#1D1C1A]">
+                    <Globe className="h-4 w-4 text-[#F58C56]" />
+                    Real Chrome Bulk Sync (1–100+ Links)
+                  </h3>
+                  <p className="mt-0.5 text-xs text-[#8C837A]">
+                    Connects to your real non-incognito Chrome window, opens links sequentially with
+                    gentle scrolling, extracts price, sold count, rating, title &amp; gallery images,
+                    and pauses safely if login/verification appears.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setShowChromeSync(false)}>
+                  <X className="h-4 w-4 text-[#8C837A]" />
+                </button>
+              </div>
+
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#FAF7F2] p-3">
+                <div className="flex items-center gap-2 text-xs font-bold">
+                  <span
+                    className={`inline-block h-2.5 w-2.5 rounded-full ${
+                      chromeCdpState.connected ? 'bg-emerald-500' : 'bg-rose-500'
+                    }`}
+                  />
+                  <span className={chromeCdpState.connected ? 'text-emerald-700' : 'text-rose-700'}>
+                    {chromeCdpState.connected
+                      ? `Connected (${chromeCdpState.browser || 'Google Chrome'})`
+                      : 'Real Chrome Not Connected (Port 9222)'}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleLaunchRealChrome}
+                    disabled={launchingChrome}
+                    className="rounded-xl bg-[#1E1D1B] px-3.5 py-2 text-xs font-bold text-white hover:bg-black disabled:opacity-60"
+                  >
+                    {launchingChrome ? 'Opening Chrome...' : 'Open Real Chrome'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={refreshChromeCdpStatus}
+                    className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-[#1D1C1A] shadow-sm hover:bg-[#EFE9E0]"
+                  >
+                    Check Status
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-[#6E655D]">
+                    Paste Product Links (1 link per line — up to 100+ Shopee / TikTok / Lazada / Pinduoduo links)
+                  </label>
+                  <textarea
+                    rows={5}
+                    value={chromeUrlsText}
+                    onChange={(e) => setChromeUrlsText(e.target.value)}
+                    placeholder={`https://s.shopee.com.my/2BGkdfkuBD\nhttps://s.shopee.com.my/2LaBxwfjZT`}
+                    className="w-full rounded-2xl bg-[#FAF7F2] p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#F58C56]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-[#6E655D]">
+                      Default Category (for new items)
+                    </label>
+                    <select
+                      value={chromeCategory}
+                      onChange={(e) => setChromeCategory(e.target.value)}
+                      className="w-full rounded-xl bg-[#FAF7F2] px-3 py-2.5 text-xs font-bold"
+                    >
+                      {categories.map((cat) => (
+                        <option key={cat.slug} value={cat.slug}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-[#6E655D]">
+                      Pause Between Links (seconds)
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      max="20"
+                      step="0.5"
+                      value={chromeDelaySec}
+                      onChange={(e) => setChromeDelaySec(e.target.value)}
+                      className="w-full rounded-xl bg-[#FAF7F2] px-3 py-2.5 text-xs font-bold"
+                    />
+                  </div>
+
+                  <div className="flex items-end gap-2">
+                    {!chromeJob?.running ? (
+                      <button
+                        type="button"
+                        onClick={() => handleStartChromeSync(null)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-[#F58C56] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#e57c45]"
+                      >
+                        <Play className="h-3.5 w-3.5" /> Start Bulk Chrome Sync
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleStopChromeSync}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-rose-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-rose-700"
+                      >
+                        <Square className="h-3.5 w-3.5" /> Stop Sync
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {chromeJob && (chromeJob.running || chromeJob.total > 0) && (
+                  <div className="rounded-2xl border border-[#EFE9E0] bg-[#FAF7F2] p-3.5">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
+                      <span>
+                        Progress: {chromeJob.completed}/{chromeJob.total} • Saved:{' '}
+                        <span className="text-emerald-700">{chromeJob.succeeded}</span> • Failed:{' '}
+                        <span className="text-rose-700">{chromeJob.failed}</span>
+                      </span>
+                      {chromeJob.running && chromeJob.currentUrl && (
+                        <span className="max-w-xs truncate text-[#C85A21]">
+                          Opening: {chromeJob.currentUrl}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-[#EFE9E0]">
+                      <div
+                        className="h-full bg-[#F58C56] transition-all"
+                        style={{
+                          width: `${
+                            chromeJob.total > 0
+                              ? Math.round((chromeJob.completed / chromeJob.total) * 100)
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+
+                    {chromeJob.paused && chromeJob.remainingUrls?.length > 0 && (
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                        <span>{chromeJob.pauseReason}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleStartChromeSync(chromeJob.remainingUrls)}
+                          className="rounded-xl bg-[#1E1D1B] px-3 py-1.5 text-[11px] font-bold text-white"
+                        >
+                          Resume Remaining ({chromeJob.remainingUrls.length})
+                        </button>
+                      </div>
+                    )}
+
+                    {chromeJob.results?.length > 0 && (
+                      <div className="mt-3 max-h-48 space-y-1.5 overflow-y-auto">
+                        {chromeJob.results.map((r, i) => (
+                          <div
+                            key={r.url + i}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-[11px]"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span
+                                className={`mr-1.5 font-extrabold ${
+                                  r.ok ? 'text-emerald-700' : 'text-rose-700'
+                                }`}
+                              >
+                                {r.ok ? `${r.action === 'updated' ? 'Updated' : 'Added'} ${r.code}` : 'Error'}
+                              </span>
+                              <span className="font-semibold text-[#1D1C1A]">
+                                {r.ok ? r.title : r.url}
+                              </span>
+                            </div>
+                            {r.ok ? (
+                              <div className="flex items-center gap-2 font-bold text-[#6E655D]">
+                                <span>{r.price ? `RM ${Number(r.price).toFixed(2)}` : 'No price'}</span>
+                                <span>• {r.soldCount ?? 0} sold</span>
+                                <span>• ★ {r.rating ?? '-'}</span>
+                                <span>• {r.imageCount || 0} imgs</span>
+                              </div>
+                            ) : (
+                              <span className="text-rose-700">{r.error}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Bulk CSV / JSON Import Drawer */}
           {showImport && (
             <section className="rounded-[28px] bg-white p-5 shadow-sm">

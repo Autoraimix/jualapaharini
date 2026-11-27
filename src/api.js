@@ -161,3 +161,33 @@ export function syncAllProducts() {
     headers: adminHeaders(),
   });
 }
+
+export function getChromeSyncStatus() {
+  return apiRequest('/api/admin/chrome/status', { headers: adminHeaders() });
+}
+
+export function launchRealChrome() {
+  return apiRequest('/api/admin/chrome/launch', {
+    method: 'POST',
+    headers: adminHeaders(),
+  });
+}
+
+export function startChromeBulkSync(payload) {
+  return apiRequest('/api/admin/chrome/sync-start', {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function pollChromeBulkSync() {
+  return apiRequest('/api/admin/chrome/sync-status', { headers: adminHeaders() });
+}
+
+export function stopChromeBulkSync() {
+  return apiRequest('/api/admin/chrome/sync-stop', {
+    method: 'POST',
+    headers: adminHeaders(),
+  });
+}

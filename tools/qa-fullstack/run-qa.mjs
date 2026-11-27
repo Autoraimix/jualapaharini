@@ -261,6 +261,74 @@ async function run() {
       JSON.stringify(syncAllJson)
     );
 
+    // Real Chrome Bulk Sync API & gallery_images persistence checks
+    const unauthChrome = await fetch(`${BASE_URL}/api/admin/chrome/status`);
+    assert(unauthChrome.status === 401, 'Chrome status endpoint requires admin auth');
+    const chromeStatus = await fetch(`${BASE_URL}/api/admin/chrome/status`, {
+      headers: authHeaders,
+    }).then((r) => r.json());
+    assert(
+      typeof chromeStatus.connected === 'boolean' && chromeStatus.cdpPort === 9222,
+      'Chrome status endpoint returns CDP status cleanly'
+    );
+
+    const galleryCreate = await fetch(`${BASE_URL}/api/admin/products`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        title: 'PS5 Gallery QA Item',
+        image_url: '/icons/icon-512.svg',
+        gallery_images: ['/icons/icon-512.svg', '/icons/icon-192.svg'],
+        shopee_url: 'https://s.shopee.com.my/2LaBxwfjZT',
+        shopee_price: 3666,
+        shopee_rating: 4.9,
+        purchase_count: 10000,
+      }),
+    }).then((r) => r.json());
+    assert(
+      galleryCreate.product?.gallery_images?.includes('/icons/icon-192.svg'),
+      'gallery_images persists in SQLite across creates'
+    );
+
+    // Test chrome_sync.py DOM extractor against exact Shopee PDP HTML (.nt0EaI, .Ocv3B8, .C21rQm)
+    const sampleHtmlPath = path.join(ROOT, 'data', 'qa_shopee_sample.html');
+    fs.writeFileSync(
+      sampleHtmlPath,
+      `<!doctype html><html><head><title>PS5 Pro | Shopee Malaysia</title></head><body>
+      <h1>Mall 【11.11 SALE】 PS5 Playstation 5</h1>
+      <div><span>4.9</span> <span>5.7k Ratings</span> <div class="Ocv3B8"><span class="PfWbfd">10k+</span> Sold</div></div>
+      <div class="nt0EaI"><div class="pyzxvq pw3J3G">RM3,666.00</div><p class="RKwYtD">After Voucher</p></div>
+      <div>Installment 12x RM305.50</div>
+      <section class="C21rQm">
+        <div class="VmNEQ6"><img class="e3bgiU" src="https://down-my.img.susercontent.com/file/my-11134207-820li-mvojwrl9o5q9d0_tn"></div>
+        <div class="qIctnQ"><picture><img class="P39yUt" src="https://down-my.img.susercontent.com/file/my-11110105-6v6x7-mfdt94c9e9e16f_cover"></picture><img class="emXGWZ" src="https://deo.shopeemobile.com/shopee/421d93895226dfa2.svg"></div>
+        <div class="qIctnQ"><picture><img class="P39yUt" src="https://down-my.img.susercontent.com/file/my-11134207-820li-mvojwrl9o5q9d0"></picture></div>
+        <div class="qIctnQ"><picture><img class="P39yUt" src="https://down-my.img.susercontent.com/file/my-11134207-820lc-mfdt3srigqhaf1"></picture></div>
+        <div class="qIctnQ"><picture><img class="P39yUt" src="https://down-my.img.susercontent.com/file/my-11134207-7rash-m29ek9d67ifz59"></picture></div>
+      </section></body></html>`,
+      'utf8'
+    );
+    const chromeExtractRun = spawnSync(
+      'python',
+      ['tools/chrome_sync.py', '--test-html', sampleHtmlPath],
+      { cwd: ROOT, encoding: 'utf8' }
+    );
+    try {
+      fs.unlinkSync(sampleHtmlPath);
+    } catch {}
+    const extractedSample = JSON.parse((chromeExtractRun.stdout || '{}').trim() || '{}');
+    assert(
+      chromeExtractRun.status === 0 &&
+        extractedSample.price === 3666 &&
+        extractedSample.soldCount === 10000 &&
+        extractedSample.rating === 4.9 &&
+        Array.isArray(extractedSample.images) &&
+        extractedSample.images[0] === 'https://down-my.img.susercontent.com/file/my-11134207-820li-mvojwrl9o5q9d0' &&
+        extractedSample.images.length >= 4,
+      'chrome_sync.py extracts RM3,666.00 (ignoring 12x RM305.50), 10k+ sold, 4.9 rating, and C21rQm gallery images',
+      chromeExtractRun.stdout + chromeExtractRun.stderr
+    );
+
     // Logout test
     const logoutRes = await fetch(`${BASE_URL}/api/admin/logout`, {
       method: 'POST',
@@ -347,6 +415,13 @@ with sync_playwright() as p:
 
     assert page.get_by_role("button", name="Log Out").is_visible(), "Log Out button must be visible"
     assert page.get_by_role("button", name="Sync All Prices").is_visible(), "Sync All Prices button must be visible"
+    assert page.get_by_role("button", name="Real Chrome Bulk Sync").is_visible(), "Real Chrome Bulk Sync button must be visible"
+
+    # Open Real Chrome Bulk Sync panel
+    page.get_by_role("button", name="Real Chrome Bulk Sync").click()
+    page.wait_for_timeout(200)
+    assert page.get_by_role("button", name="Open Real Chrome").is_visible(), "Open Real Chrome button must be visible"
+    assert page.get_by_role("button", name="Start Bulk Chrome Sync").is_visible(), "Start Bulk Chrome Sync button must be visible"
 
     # Check Change Password menu field order
     page.get_by_role("button", name="Change Password").click()

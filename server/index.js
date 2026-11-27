@@ -1,7 +1,10 @@
 import 'dotenv/config';
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
@@ -207,6 +210,23 @@ function sanitizeProductInput(body, existing = null, fallbackCode = null) {
     category_slug: String(body.category_slug ?? existing?.category_slug ?? 'tech').trim() || 'tech',
     tags: String(body.tags ?? existing?.tags ?? '').trim(),
     image_url: String(body.image_url ?? existing?.image_url ?? '').trim(),
+    gallery_images: (() => {
+      const raw = body.gallery_images ?? existing?.gallery_images ?? '[]';
+      if (Array.isArray(raw)) {
+        return JSON.stringify(raw.map((u) => String(u || '').trim()).filter(Boolean).slice(0, 12));
+      }
+      if (typeof raw === 'string') {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            return JSON.stringify(parsed.map((u) => String(u || '').trim()).filter(Boolean).slice(0, 12));
+          }
+        } catch {
+          return '[]';
+        }
+      }
+      return '[]';
+    })(),
     ...platformFields,
     purchase_count: Math.max(0, Math.round(toNum(body.purchase_count, existing?.purchase_count ?? 0))),
     reliability_score,
@@ -550,7 +570,7 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
     const info = db
       .prepare(
         `INSERT INTO products (
-          code, title, description, category_slug, tags, image_url,
+          code, title, description, category_slug, tags, image_url, gallery_images,
           shopee_url, shopee_price, shopee_price_status, shopee_rating,
           tiktok_url, tiktok_price, tiktok_price_status, tiktok_rating,
           lazada_url, lazada_price, lazada_price_status, lazada_rating,
@@ -558,7 +578,7 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
           purchase_count, reliability_score, reliability_verified,
           is_featured, last_price_sync
         ) VALUES (
-          @code, @title, @description, @category_slug, @tags, @image_url,
+          @code, @title, @description, @category_slug, @tags, @image_url, @gallery_images,
           @shopee_url, @shopee_price, @shopee_price_status, @shopee_rating,
           @tiktok_url, @tiktok_price, @tiktok_price_status, @tiktok_rating,
           @lazada_url, @lazada_price, @lazada_price_status, @lazada_rating,
@@ -595,6 +615,7 @@ app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
         category_slug = @category_slug,
         tags = @tags,
         image_url = @image_url,
+        gallery_images = @gallery_images,
         shopee_url = @shopee_url,
         shopee_price = @shopee_price,
         shopee_price_status = @shopee_price_status,
@@ -664,14 +685,14 @@ app.post('/api/admin/import', requireAdmin, (req, res) => {
 
   const upsert = db.prepare(`
     INSERT INTO products (
-      code, title, description, category_slug, tags, image_url,
+      code, title, description, category_slug, tags, image_url, gallery_images,
       shopee_url, shopee_price, shopee_price_status, shopee_rating,
       tiktok_url, tiktok_price, tiktok_price_status, tiktok_rating,
       lazada_url, lazada_price, lazada_price_status, lazada_rating,
       pinduoduo_url, pinduoduo_price, pinduoduo_price_status, pinduoduo_rating,
       purchase_count, reliability_score, reliability_verified, is_featured, last_price_sync
     ) VALUES (
-      @code, @title, @description, @category_slug, @tags, @image_url,
+      @code, @title, @description, @category_slug, @tags, @image_url, @gallery_images,
       @shopee_url, @shopee_price, @shopee_price_status, @shopee_rating,
       @tiktok_url, @tiktok_price, @tiktok_price_status, @tiktok_rating,
       @lazada_url, @lazada_price, @lazada_price_status, @lazada_rating,
@@ -684,6 +705,7 @@ app.post('/api/admin/import', requireAdmin, (req, res) => {
       category_slug = excluded.category_slug,
       tags = excluded.tags,
       image_url = excluded.image_url,
+      gallery_images = excluded.gallery_images,
       shopee_url = excluded.shopee_url,
       shopee_price = excluded.shopee_price,
       shopee_rating = excluded.shopee_rating,
@@ -779,6 +801,437 @@ app.get('/api/admin/export', requireAdmin, (req, res) => {
     return res.send(lines.join('\n'));
   }
   res.json({ exportedAt: new Date().toISOString(), products });
+});
+
+// ---------- Real Chrome CDP Bulk Sync ----------
+
+const CHROME_CDP_PORT = Number(process.env.CHROME_CDP_PORT || 9222);
+const CHROME_CDP_URL = `http://127.0.0.1:${CHROME_CDP_PORT}`;
+const CHROME_PROFILE_DIR = path.join(ROOT_DIR, 'data', 'chrome-profile');
+const CHROME_SYNC_SCRIPT = path.join(ROOT_DIR, 'tools', 'chrome_sync.py');
+
+function findChromeExecutable() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  ].filter(Boolean);
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return '';
+}
+
+async function getChromeCdpInfo() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
+  try {
+    const res = await fetch(`${CHROME_CDP_URL}/json/version`, { signal: controller.signal });
+    if (!res.ok) return { connected: false, browser: null };
+    const json = await res.json();
+    return { connected: true, browser: json.Browser || 'Google Chrome' };
+  } catch {
+    return { connected: false, browser: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function normalizeUrlBase(raw) {
+  try {
+    const u = new URL(String(raw || '').trim());
+    return `${u.origin}${u.pathname}`.replace(/\/+$/, '').toLowerCase();
+  } catch {
+    return String(raw || '').trim().toLowerCase();
+  }
+}
+
+function upsertChromeExtractedProduct({ url, platform, data, categorySlug }) {
+  const pl = PLATFORMS.includes(platform) ? platform : 'shopee';
+  const finalUrl = data?.finalUrl || url;
+  const targetClean = String(url || '').trim();
+  const targetBase = normalizeUrlBase(targetClean);
+  const finalBase = normalizeUrlBase(finalUrl);
+
+  const allProducts = db.prepare('SELECT * FROM products').all();
+  const existing = allProducts.find((prod) => {
+    const stored = String(prod[`${pl}_url`] || '').trim();
+    if (!stored) return false;
+    const storedBase = normalizeUrlBase(stored);
+    return (
+      stored === targetClean ||
+      storedBase === targetBase ||
+      (finalBase && storedBase === finalBase)
+    );
+  });
+
+  const localImages = Array.isArray(data?.localImages)
+    ? data.localImages.filter(Boolean)
+    : Array.isArray(data?.images)
+      ? data.images.filter(Boolean)
+      : [];
+  const heroImage = localImages[0] || existing?.image_url || '/icons/icon-512.svg';
+  const galleryJson = JSON.stringify(localImages.slice(0, 8));
+
+  const parsedPrice =
+    typeof data?.price === 'number' && Number.isFinite(data.price) && data.price > 0
+      ? Number(data.price.toFixed(2))
+      : null;
+  const parsedRating =
+    typeof data?.rating === 'number' && Number.isFinite(data.rating) && data.rating >= 1 && data.rating <= 5
+      ? Number(data.rating.toFixed(1))
+      : null;
+  const parsedSold =
+    typeof data?.soldCount === 'number' && Number.isFinite(data.soldCount) && data.soldCount >= 0
+      ? Math.round(data.soldCount)
+      : null;
+  const extractedTitle = String(data?.title || '').trim();
+
+  if (existing) {
+    const nextPrice = parsedPrice !== null ? parsedPrice : existing[`${pl}_price`];
+    const nextStatus = parsedPrice !== null ? 'synced' : existing[`${pl}_price_status`];
+    const nextRating = parsedRating !== null ? parsedRating : existing[`${pl}_rating`];
+    const nextSold =
+      parsedSold !== null && parsedSold > 0 ? parsedSold : existing.purchase_count;
+    const nextTitle = existing.title || extractedTitle || `Product ${existing.code}`;
+    const nextImage = localImages[0] || existing.image_url;
+    const nextGallery = localImages.length > 0 ? galleryJson : existing.gallery_images || '[]';
+
+    const ratings = [];
+    for (const p of PLATFORMS) {
+      const hasUrl = p === pl || String(existing[`${p}_url`] || '').trim().length > 0;
+      const r = p === pl ? nextRating : existing[`${p}_rating`];
+      if (hasUrl && typeof r === 'number' && Number.isFinite(r)) {
+        ratings.push(r);
+      }
+    }
+    const nextReliability = computeCombinedReliabilityFromRatings(
+      ratings,
+      existing.reliability_score
+    );
+
+    db.prepare(
+      `UPDATE products
+       SET title = ?,
+           image_url = ?,
+           gallery_images = ?,
+           ${pl}_price = ?,
+           ${pl}_price_status = ?,
+           ${pl}_rating = ?,
+           purchase_count = ?,
+           reliability_score = ?,
+           last_price_sync = datetime('now'),
+           updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(
+      nextTitle,
+      nextImage,
+      nextGallery,
+      nextPrice,
+      nextStatus,
+      nextRating,
+      nextSold,
+      nextReliability,
+      existing.id
+    );
+
+    const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(existing.id);
+    return { action: 'updated', product: updated };
+  }
+
+  const nextCode = getNextProductCode();
+  const payload = sanitizeProductInput(
+    {
+      code: nextCode,
+      title: extractedTitle || `Imported ${pl.toUpperCase()} Item ${nextCode}`,
+      description: '',
+      category_slug: categorySlug || 'tech',
+      tags: pl,
+      image_url: heroImage,
+      gallery_images: localImages,
+      [`${pl}_url`]: targetClean,
+      [`${pl}_price`]: parsedPrice,
+      [`${pl}_price_status`]: parsedPrice !== null ? 'synced' : 'manual',
+      [`${pl}_rating`]: parsedRating ?? 4.8,
+      purchase_count: parsedSold ?? 0,
+      reliability_verified: 1,
+    },
+    null,
+    nextCode
+  );
+
+  const info = db
+    .prepare(
+      `INSERT INTO products (
+        code, title, description, category_slug, tags, image_url, gallery_images,
+        shopee_url, shopee_price, shopee_price_status, shopee_rating,
+        tiktok_url, tiktok_price, tiktok_price_status, tiktok_rating,
+        lazada_url, lazada_price, lazada_price_status, lazada_rating,
+        pinduoduo_url, pinduoduo_price, pinduoduo_price_status, pinduoduo_rating,
+        purchase_count, reliability_score, reliability_verified,
+        is_featured, last_price_sync
+      ) VALUES (
+        @code, @title, @description, @category_slug, @tags, @image_url, @gallery_images,
+        @shopee_url, @shopee_price, @shopee_price_status, @shopee_rating,
+        @tiktok_url, @tiktok_price, @tiktok_price_status, @tiktok_rating,
+        @lazada_url, @lazada_price, @lazada_price_status, @lazada_rating,
+        @pinduoduo_url, @pinduoduo_price, @pinduoduo_price_status, @pinduoduo_rating,
+        @purchase_count, @reliability_score, @reliability_verified,
+        @is_featured, datetime('now')
+      )`
+    )
+    .run(payload);
+
+  const created = db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);
+  return { action: 'created', product: created };
+}
+
+let chromeSyncJob = {
+  running: false,
+  paused: false,
+  pauseReason: '',
+  total: 0,
+  completed: 0,
+  succeeded: 0,
+  failed: 0,
+  currentUrl: '',
+  remainingUrls: [],
+  results: [],
+  error: '',
+  child: null,
+};
+
+function publicChromeJobSnapshot() {
+  return {
+    running: chromeSyncJob.running,
+    paused: chromeSyncJob.paused,
+    pauseReason: chromeSyncJob.pauseReason,
+    total: chromeSyncJob.total,
+    completed: chromeSyncJob.completed,
+    succeeded: chromeSyncJob.succeeded,
+    failed: chromeSyncJob.failed,
+    currentUrl: chromeSyncJob.currentUrl,
+    remainingUrls: chromeSyncJob.remainingUrls,
+    results: chromeSyncJob.results.slice(-100),
+    error: chromeSyncJob.error,
+  };
+}
+
+app.get('/api/admin/chrome/status', requireAdmin, async (_req, res) => {
+  const cdp = await getChromeCdpInfo();
+  res.json({
+    ...cdp,
+    cdpPort: CHROME_CDP_PORT,
+    profileDir: CHROME_PROFILE_DIR,
+    chromeInstalled: Boolean(findChromeExecutable()),
+  });
+});
+
+app.post('/api/admin/chrome/launch', requireAdmin, async (_req, res) => {
+  const current = await getChromeCdpInfo();
+  if (current.connected) {
+    return res.json({
+      ok: true,
+      connected: true,
+      browser: current.browser,
+      message: 'Real Chrome is already connected and ready.',
+    });
+  }
+
+  const exe = findChromeExecutable();
+  if (!exe) {
+    return res.status(400).json({
+      error: 'Google Chrome executable was not found automatically. Start Chrome manually with --remote-debugging-port=9222.',
+    });
+  }
+
+  fs.mkdirSync(CHROME_PROFILE_DIR, { recursive: true });
+  const chromeProc = spawn(
+    exe,
+    [
+      `--remote-debugging-port=${CHROME_CDP_PORT}`,
+      `--user-data-dir=${CHROME_PROFILE_DIR}`,
+      '--no-first-run',
+      'https://shopee.com.my',
+    ],
+    { detached: true, stdio: 'ignore' }
+  );
+  chromeProc.unref();
+
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 400));
+    const check = await getChromeCdpInfo();
+    if (check.connected) {
+      return res.json({
+        ok: true,
+        connected: true,
+        browser: check.browser,
+        message: 'Real Chrome opened! Sign in to Shopee/storefronts in that window if needed, then start sync.',
+      });
+    }
+  }
+
+  res.json({
+    ok: true,
+    connected: false,
+    message: 'Chrome launch started. If port 9222 is not detected yet, click Check Chrome Status after Chrome finishes opening.',
+  });
+});
+
+app.get('/api/admin/chrome/sync-status', requireAdmin, (_req, res) => {
+  res.json(publicChromeJobSnapshot());
+});
+
+app.post('/api/admin/chrome/sync-stop', requireAdmin, (_req, res) => {
+  if (chromeSyncJob.child && chromeSyncJob.running) {
+    try {
+      chromeSyncJob.child.kill();
+    } catch {
+      // Ignore
+    }
+  }
+  chromeSyncJob.running = false;
+  chromeSyncJob.paused = false;
+  chromeSyncJob.currentUrl = '';
+  res.json({ ok: true, ...publicChromeJobSnapshot() });
+});
+
+app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
+  if (chromeSyncJob.running) {
+    return res.status(409).json({ error: 'A Real Chrome sync job is already running.' });
+  }
+
+  const rawUrls = req.body?.urls;
+  const parsedUrls = (
+    Array.isArray(rawUrls)
+      ? rawUrls
+      : String(rawUrls || '')
+          .split(/\r?\n/)
+  )
+    .map((u) => String(u || '').trim())
+    .filter((u) => /^https?:\/\//i.test(u));
+
+  const uniqueUrls = [...new Set(parsedUrls)];
+  if (uniqueUrls.length === 0) {
+    return res.status(400).json({ error: 'Please paste at least 1 valid http/https product link.' });
+  }
+
+  const cdp = await getChromeCdpInfo();
+  if (!cdp.connected) {
+    return res.status(400).json({
+      error: 'Real Chrome is not connected on port 9222 yet. Click "Open Real Chrome" first and wait for it to connect.',
+    });
+  }
+
+  const categorySlug = String(req.body?.categorySlug || 'tech').trim() || 'tech';
+  const delaySeconds = Math.min(20, Math.max(1.5, Number(req.body?.delaySeconds || 4.5)));
+
+  const jobFile = path.join(os.tmpdir(), `hja_chrome_sync_${Date.now()}.json`);
+  fs.writeFileSync(
+    jobFile,
+    JSON.stringify({ urls: uniqueUrls, delaySeconds, uploadsDir: UPLOADS_DIR }),
+    'utf8'
+  );
+
+  chromeSyncJob = {
+    running: true,
+    paused: false,
+    pauseReason: '',
+    total: uniqueUrls.length,
+    completed: 0,
+    succeeded: 0,
+    failed: 0,
+    currentUrl: uniqueUrls[0],
+    remainingUrls: [...uniqueUrls],
+    results: [],
+    error: '',
+    child: null,
+  };
+
+  const child = spawn('python', [CHROME_SYNC_SCRIPT, '--cdp-url', CHROME_CDP_URL, '--input-json', jobFile], {
+    cwd: ROOT_DIR,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  chromeSyncJob.child = child;
+
+  const rl = readline.createInterface({ input: child.stdout });
+  rl.on('line', (line) => {
+    let msg = null;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (msg.event === 'progress') {
+      chromeSyncJob.currentUrl = msg.url || '';
+    } else if (msg.event === 'result') {
+      chromeSyncJob.completed++;
+      chromeSyncJob.remainingUrls = uniqueUrls.slice(msg.index + 1);
+      if (msg.ok && msg.data) {
+        try {
+          const saved = upsertChromeExtractedProduct({
+            url: msg.url,
+            platform: msg.platform,
+            data: msg.data,
+            categorySlug,
+          });
+          chromeSyncJob.succeeded++;
+          chromeSyncJob.results.push({
+            url: msg.url,
+            ok: true,
+            action: saved.action,
+            code: saved.product?.code,
+            title: msg.data.title || saved.product?.title,
+            price: msg.data.price,
+            soldCount: msg.data.soldCount,
+            rating: msg.data.rating,
+            imageCount: (msg.data.localImages || msg.data.images || []).length,
+            heroImage: saved.product?.image_url,
+          });
+        } catch (dbErr) {
+          chromeSyncJob.failed++;
+          chromeSyncJob.results.push({ url: msg.url, ok: false, error: dbErr.message });
+        }
+      } else {
+        chromeSyncJob.failed++;
+        chromeSyncJob.results.push({
+          url: msg.url,
+          ok: false,
+          error: msg.error || 'Extraction failed',
+        });
+      }
+    } else if (msg.event === 'paused_verification') {
+      chromeSyncJob.paused = true;
+      chromeSyncJob.running = false;
+      chromeSyncJob.pauseReason = msg.reason || 'Verification required in Chrome.';
+      chromeSyncJob.remainingUrls = uniqueUrls.slice(msg.index || 0);
+      chromeSyncJob.currentUrl = '';
+    } else if (msg.event === 'error') {
+      chromeSyncJob.error = msg.error || 'Chrome sync error';
+      chromeSyncJob.running = false;
+    }
+  });
+
+  let stderrBuf = '';
+  child.stderr.on('data', (chunk) => {
+    stderrBuf += chunk.toString();
+  });
+
+  child.on('close', (code) => {
+    chromeSyncJob.running = false;
+    chromeSyncJob.child = null;
+    if (!chromeSyncJob.paused && code !== 0 && code !== 2 && !chromeSyncJob.error && stderrBuf) {
+      chromeSyncJob.error = stderrBuf.trim().slice(0, 300);
+    }
+    try {
+      fs.unlinkSync(jobFile);
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  res.json({ ok: true, ...publicChromeJobSnapshot() });
 });
 
 // Serve built PWA frontend in production
