@@ -185,6 +185,22 @@ EXTRACT_JS = r"""
     }
   }
 
+  // Fallback for Lazada v2 (.container-star-v2-count e.g. "(1396)") when explicit sold text is absent
+  if (soldCount === null) {
+    for (const el of document.querySelectorAll('.container-star-v2-count, .pdp-review-summary__link')) {
+      const txt = cleanText(el.innerText || el.textContent);
+      const m = txt.match(/([\d.,]+\s*[kKmM]?\+?)/);
+      if (m) {
+        const parsed = parseCompactCount(m[1]);
+        if (parsed !== null) {
+          soldCount = parsed;
+          soldRaw = txt;
+          break;
+        }
+      }
+    }
+  }
+
   // 4. Rating Extraction (Shopee .product-rating-overview__rating-score + Lazada v2 + PDP fallback)
   let rating = null;
   const ratingSelectors = [

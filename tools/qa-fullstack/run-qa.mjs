@@ -374,10 +374,11 @@ async function run() {
         extractedLazada.title?.includes('UGREEN 3 Ports 65W GaN Charger') &&
         extractedLazada.price === 60.03 &&
         extractedLazada.rating === 5 &&
+        extractedLazada.soldCount === 1396 &&
         Array.isArray(extractedLazada.images) &&
         extractedLazada.images.length === 3 &&
         extractedLazada.images[0] === 'https://img.lazcdn.com/g/p/f5aecef1b2f751ce38b5ec8670031c28.jpg',
-      'chrome_sync.py extracts Lazada v2 sale price (RM60.03, not RM159), rating 5.0, title, and deduplicated full-res lazcdn gallery images',
+      'chrome_sync.py extracts Lazada v2 sale price (RM60.03), rating 5.0, count 1396, title, and deduplicated lazcdn gallery',
       lazadaExtractRun.stdout + lazadaExtractRun.stderr
     );
 
