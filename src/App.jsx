@@ -242,9 +242,11 @@ export default function App() {
           <div className="space-y-5">
             {/* Brand */}
             <div className="flex items-center gap-2.5 px-1">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#F58C56] text-sm font-black text-white shadow-sm">
-                H
-              </span>
+              <img
+                src="/favicon.svg"
+                alt={storeSettings.store_name || 'HariniJualApa'}
+                className="h-9 w-9 shrink-0 rounded-xl shadow-sm"
+              />
               <span className="text-lg font-extrabold tracking-tight text-white">
                 {storeSettings.store_name}
               </span>
@@ -314,9 +316,11 @@ export default function App() {
           <header className="mb-4 flex items-center justify-between gap-3">
             {/* Mobile Brand */}
             <div className="flex items-center gap-2.5 md:hidden">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#F58C56] text-sm font-black text-white shadow-sm">
-                H
-              </span>
+              <img
+                src="/favicon.svg"
+                alt={storeSettings.store_name || 'HariniJualApa'}
+                className="h-9 w-9 shrink-0 rounded-xl shadow-sm"
+              />
               <h1 className="text-lg font-extrabold tracking-tight text-[#1D1C1A]">
                 {storeSettings.store_name}
               </h1>
