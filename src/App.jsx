@@ -414,25 +414,27 @@ export default function App() {
                   Install App
                 </button>
               )}
-              <button
-                type="button"
-                onClick={toggleNotificationsPanel}
-                aria-label="Store updates"
-                className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1D1C1A] shadow-[0_6px_18px_rgba(32,24,16,0.06)] transition hover:bg-[#FAF7F2]"
-              >
-                <Bell className="h-4 w-4" />
-                {latestNotifId > lastSeenNotifId && (
-                  <span
-                    aria-label="Unread updates"
-                    className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#F58C56]"
-                  />
-                )}
-              </button>
+              {activeTab !== 'admin' && (
+                <button
+                  type="button"
+                  onClick={toggleNotificationsPanel}
+                  aria-label="Store updates"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1D1C1A] shadow-[0_6px_18px_rgba(32,24,16,0.06)] transition hover:bg-[#FAF7F2]"
+                >
+                  <Bell className="h-4 w-4" />
+                  {latestNotifId > lastSeenNotifId && (
+                    <span
+                      aria-label="Unread updates"
+                      className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#F58C56]"
+                    />
+                  )}
+                </button>
+              )}
             </div>
           </header>
 
-        {/* Live Store Updates / Admin Notifications Panel */}
-        {showDropsToast && (
+        {/* Live Store Updates / Admin Notifications Panel (Storefront only, hidden on /admin) */}
+        {showDropsToast && activeTab !== 'admin' && (
           <div className="mb-4 rounded-[22px] bg-[#1E1D1B] p-4 text-xs text-white shadow-md">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">

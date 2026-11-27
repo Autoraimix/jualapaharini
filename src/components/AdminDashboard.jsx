@@ -1116,11 +1116,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       <section className="rounded-[28px] bg-white p-5 shadow-[0_8px_28px_rgba(32,24,16,0.05)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-extrabold text-[#1D1C1A]">Admin &amp; SQLite Manager</h2>
-            <p className="text-xs text-[#8C837A]">
-              Signed in as <span className="font-bold text-[#1D1C1A]">{adminUsername}</span> •
-              Auto-locks after 10 mins idle
-            </p>
+            <h2 className="text-lg font-extrabold text-[#1D1C1A]">Admin Dashboard</h2>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -2105,7 +2101,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
               <section className="rounded-[28px] bg-white p-5 shadow-sm">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
                   <h3 className="text-sm font-extrabold text-[#1D1C1A]">
-                    SQLite Catalog (
+                    Catalog (
                     {catalogSearchResults !== null
                       ? `${totalCatalogCount} of ${products.length}`
                       : products.length}

@@ -578,6 +578,10 @@ with sync_playwright() as p:
     page.get_by_role("button", name="Sign In", exact=True).click()
     page.wait_for_timeout(600)
 
+    assert page.get_by_role("heading", name="Admin Dashboard").is_visible(), "Admin heading must say Admin Dashboard"
+    assert page.get_by_text("Auto-locks after 10 mins idle").count() == 0, "Idle subtitle must be removed from Admin page"
+    assert page.get_by_role("button", name="Store updates").count() == 0, "Bell notifications button must be hidden on Admin page"
+    assert page.get_by_text("Latest Store Updates").count() == 0, "Notifications panel must be hidden on Admin page"
     assert page.get_by_role("button", name="Log Out").is_visible(), "Log Out button must be visible"
     assert page.get_by_role("button", name="Sync All Prices").is_visible(), "Sync All Prices button must be visible"
     assert page.get_by_role("button", name="Real Chrome Bulk Sync").is_visible(), "Real Chrome Bulk Sync button must be visible"
