@@ -1022,7 +1022,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
 
               <p className="mb-2 text-[11px] text-[#8C837A]">
                 CSV headers:{' '}
-                <code>
+                <code className="break-all">
                   code,title,description,category_slug,tags,image_url,shopee_url,shopee_price,shopee_rating,tiktok_url,tiktok_price,tiktok_rating,lazada_url,lazada_price,lazada_rating,pinduoduo_url,pinduoduo_price,pinduoduo_rating,purchase_count
                 </code>
               </p>
