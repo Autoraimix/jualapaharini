@@ -1258,6 +1258,7 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
 
   const categorySlug = String(req.body?.categorySlug || 'tech').trim() || 'tech';
   const delaySeconds = Math.min(60, Math.max(1.5, Number(req.body?.delaySeconds || 4.5)));
+  const closeOnComplete = req.body?.closeOnComplete !== false;
 
   const jobFile = path.join(os.tmpdir(), `hja_chrome_sync_${Date.now()}.json`);
   fs.writeFileSync(
@@ -1267,6 +1268,7 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
       delaySeconds,
       uploadsDir: UPLOADS_DIR,
       headless,
+      closeOnComplete,
       profileDir: CHROME_PROFILE_DIR,
     }),
     'utf8'

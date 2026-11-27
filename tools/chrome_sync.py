@@ -612,6 +612,7 @@ def run_cdp_batch(cdp_url: str, input_json_path: str):
     delay_seconds = float(cfg.get("delaySeconds", 5.0))
     uploads_dir = Path(cfg["uploadsDir"]) if cfg.get("uploadsDir") else None
     headless = bool(cfg.get("headless", False))
+    close_on_complete = bool(cfg.get("closeOnComplete", True))
     profile_dir = cfg.get("profileDir")
 
     if not urls:
@@ -682,6 +683,20 @@ def run_cdp_batch(cdp_url: str, input_json_path: str):
         except Exception:
             pass
         process_url_queue(page, context, urls, delay_seconds, uploads_dir, headless=False)
+
+        if close_on_complete:
+            has_local_admin_tab = any(
+                "localhost" in (pg.url or "").lower() or "127.0.0.1" in (pg.url or "").lower()
+                for pg in context.pages
+            )
+            try:
+                if has_local_admin_tab:
+                    page.close()
+                else:
+                    cdp = browser.new_browser_cdp_session()
+                    cdp.send("Browser.close")
+            except Exception:
+                pass
 
 
 def main():
