@@ -284,6 +284,19 @@ async function run() {
       'Chrome sync-status and sync-clear endpoints work cleanly'
     );
 
+    const unauthExtractOne = await fetch(`${BASE_URL}/api/admin/chrome/extract-one`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://s.lazada.com.my/s.ZpKPiT' }),
+    });
+    assert(unauthExtractOne.status === 401, 'Chrome extract-one rejects unauthenticated requests');
+    const badExtractOne = await fetch(`${BASE_URL}/api/admin/chrome/extract-one`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ url: 'not-a-url' }),
+    });
+    assert(badExtractOne.status === 400, 'Chrome extract-one validates http/https URLs');
+
     const galleryCreate = await fetch(`${BASE_URL}/api/admin/products`, {
       method: 'POST',
       headers: authHeaders,
@@ -592,6 +605,7 @@ with sync_playwright() as p:
     assert all(opt.isascii() for opt in cat_opts), f"Category dropdown still contains icons/emojis: {cat_opts}"
     assert page.get_by_placeholder("https://... or /uploads/...").count() == 0, "Image URL input should be removed"
     assert page.locator("input[type='file'][accept='image/*']").count() == 1, "Image file upload input must exist"
+    assert page.get_by_role("button", name="Chrome Sync", exact=True).first.is_visible(), "Chrome Sync button must appear on store cards"
 
     # Test Bookmarklet toggle and Quick Paste extraction in UI
     page.get_by_role("button", name="Bookmarklet Sync").click()

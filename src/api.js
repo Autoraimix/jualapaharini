@@ -207,3 +207,11 @@ export function clearChromeBulkSync() {
     headers: adminHeaders(),
   });
 }
+
+export function extractOneViaChrome(payload) {
+  return apiRequest('/api/admin/chrome/extract-one', {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify(payload),
+  });
+}

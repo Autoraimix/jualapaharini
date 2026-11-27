@@ -943,8 +943,14 @@ function upsertChromeExtractedProduct({ url, platform, data, categorySlug }) {
     const nextSold =
       parsedSold !== null && parsedSold > 0 ? parsedSold : existing.purchase_count;
     const nextTitle = existing.title || extractedTitle || `Product ${existing.code}`;
-    const nextImage = localImages[0] || existing.image_url;
-    const nextGallery = localImages.length > 0 ? galleryJson : existing.gallery_images || '[]';
+    const hasExistingImg =
+      Boolean(existing.image_url) && existing.image_url !== '/icons/icon-512.svg';
+    const nextImage = hasExistingImg ? existing.image_url : localImages[0] || existing.image_url;
+    const nextGallery = hasExistingImg
+      ? existing.gallery_images || '[]'
+      : localImages.length > 0
+        ? galleryJson
+        : existing.gallery_images || '[]';
 
     const ratings = [];
     for (const p of PLATFORMS) {
@@ -1394,6 +1400,156 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
   });
 
   res.json({ ok: true, ...publicChromeJobSnapshot() });
+});
+
+app.post('/api/admin/chrome/extract-one', requireAdmin, async (req, res) => {
+  if (chromeSyncJob.running) {
+    return res.status(409).json({ error: 'A bulk Chrome sync job is currently running. Wait for it to finish first.' });
+  }
+
+  const url = String(req.body?.url || '').trim();
+  if (!/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ error: 'Please enter a valid http/https store link first.' });
+  }
+
+  const headless = Boolean(req.body?.headless);
+  const skipImages = Boolean(req.body?.skipImages);
+  let cdp = await getChromeCdpInfo();
+  let autoLaunched = false;
+
+  if (headless) {
+    if (cdp.connected) {
+      return res.status(400).json({
+        error: 'Close the open Real Chrome window before extracting in Headless mode, or turn off Headless mode.',
+      });
+    }
+  } else if (!cdp.connected) {
+    const exe = findChromeExecutable();
+    if (!exe) {
+      return res.status(400).json({
+        error: 'Google Chrome executable was not found. Open Real Chrome manually on port 9222.',
+      });
+    }
+    fs.mkdirSync(CHROME_PROFILE_DIR, { recursive: true });
+    const chromeProc = spawn(
+      exe,
+      [
+        `--remote-debugging-port=${CHROME_CDP_PORT}`,
+        `--user-data-dir=${CHROME_PROFILE_DIR}`,
+        '--no-first-run',
+        'about:blank',
+      ],
+      { detached: true, stdio: 'ignore' }
+    );
+    chromeProc.unref();
+    for (let i = 0; i < 15; i++) {
+      await new Promise((r) => setTimeout(r, 400));
+      cdp = await getChromeCdpInfo();
+      if (cdp.connected) {
+        autoLaunched = true;
+        break;
+      }
+    }
+    if (!cdp.connected) {
+      return res.status(400).json({
+        error: 'Could not connect to Real Chrome on port 9222. Try clicking "Open Real Chrome" first.',
+      });
+    }
+  }
+
+  const jobFile = path.join(os.tmpdir(), `hja_chrome_one_${Date.now()}.json`);
+  fs.writeFileSync(
+    jobFile,
+    JSON.stringify({
+      urls: [url],
+      delaySeconds: 0,
+      uploadsDir: skipImages ? null : UPLOADS_DIR,
+      skipImages,
+      headless,
+      closeOnComplete: autoLaunched,
+      profileDir: CHROME_PROFILE_DIR,
+    }),
+    'utf8'
+  );
+
+  try {
+    const outcome = await new Promise((resolve) => {
+      const child = spawn(
+        'python',
+        [CHROME_SYNC_SCRIPT, '--cdp-url', CHROME_CDP_URL, '--input-json', jobFile],
+        {
+          cwd: ROOT_DIR,
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }
+      );
+
+      let resultEvent = null;
+      let pausedEvent = null;
+      let errorEvent = null;
+      let stderrBuf = '';
+
+      const rl = readline.createInterface({ input: child.stdout });
+      rl.on('line', (line) => {
+        try {
+          const msg = JSON.parse(line);
+          if (msg.event === 'result') resultEvent = msg;
+          else if (msg.event === 'paused_verification') pausedEvent = msg;
+          else if (msg.event === 'error') errorEvent = msg;
+        } catch {
+          // Ignore non-JSON lines
+        }
+      });
+      child.stderr.on('data', (c) => {
+        stderrBuf += c.toString();
+      });
+      child.on('close', () => {
+        resolve({ resultEvent, pausedEvent, errorEvent, stderrBuf });
+      });
+    });
+
+    if (outcome.pausedEvent) {
+      return res.status(400).json({
+        error: outcome.pausedEvent.reason || 'Login or verification required in Chrome.',
+      });
+    }
+    if (outcome.errorEvent) {
+      return res.status(400).json({ error: outcome.errorEvent.error });
+    }
+    if (!outcome.resultEvent?.ok || !outcome.resultEvent?.data) {
+      return res.status(400).json({
+        error:
+          outcome.resultEvent?.error ||
+          outcome.stderrBuf?.trim() ||
+          'Could not extract product data from Chrome.',
+      });
+    }
+
+    const d = outcome.resultEvent.data;
+    const galleryImages = skipImages
+      ? []
+      : (Array.isArray(d.localImages) ? d.localImages : d.images || []).filter(Boolean);
+
+    res.json({
+      ok: true,
+      data: {
+        title: String(d.title || '').trim(),
+        price: d.price ?? null,
+        rating: d.rating ?? null,
+        soldCount: d.soldCount ?? null,
+        imageUrl: galleryImages[0] || '',
+        galleryImages,
+        finalUrl: d.finalUrl || url,
+        platform: outcome.resultEvent.platform,
+      },
+    });
+  } finally {
+    try {
+      fs.unlinkSync(jobFile);
+    } catch {
+      // Ignore cleanup
+    }
+  }
 });
 
 // Serve built PWA frontend in production

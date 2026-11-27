@@ -653,6 +653,9 @@ def run_cdp_batch(cdp_url: str, input_json_path: str):
     uploads_dir = Path(cfg["uploadsDir"]) if cfg.get("uploadsDir") else None
     headless = bool(cfg.get("headless", False))
     close_on_complete = bool(cfg.get("closeOnComplete", True))
+    skip_images = bool(cfg.get("skipImages", False))
+    if skip_images:
+        uploads_dir = None
     profile_dir = cfg.get("profileDir")
 
     if not urls:

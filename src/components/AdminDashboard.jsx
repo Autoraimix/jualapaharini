@@ -37,6 +37,7 @@ import {
   deleteProduct,
   exportProductsCsv,
   exportProductsJson,
+  extractOneViaChrome,
   fetchAdminAnalytics,
   fetchProducts,
   fetchUrlMetadata,
@@ -71,6 +72,7 @@ const EMPTY_FORM = {
   category_slug: 'tech',
   tags: '',
   image_url: '',
+  gallery_images: [],
   shopee_url: '',
   shopee_price: '',
   shopee_rating: '4.8',
@@ -132,6 +134,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [fetchingMeta, setFetchingMeta] = useState('');
+  const [syncingChromeOne, setSyncingChromeOne] = useState('');
   const [platformMetaStatus, setPlatformMetaStatus] = useState({});
   const [quickPasteOpen, setQuickPasteOpen] = useState({});
   const [quickPasteText, setQuickPasteText] = useState({});
@@ -369,6 +372,16 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       category_slug: prod.category_slug || 'tech',
       tags: prod.tags || '',
       image_url: prod.image_url || '',
+      gallery_images: (() => {
+        try {
+          const parsed = Array.isArray(prod.gallery_images)
+            ? prod.gallery_images
+            : JSON.parse(prod.gallery_images || '[]');
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      })(),
       shopee_url: prod.shopee_url || '',
       shopee_price: prod.shopee_price ?? '',
       shopee_rating: String(prod.shopee_rating ?? prod.reliability_score ?? 4.8),
@@ -524,6 +537,82 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       }
     } finally {
       setFetchingMeta('');
+    }
+  }
+
+  async function handleChromeSyncOne(platform) {
+    const url = String(form[`${platform}_url`] || '').trim();
+    if (!url || !/^https?:\/\//i.test(url)) {
+      setPlatformMetaStatus((prev) => ({
+        ...prev,
+        [platform]: { type: 'error', text: `Please enter a valid ${platform} URL first.` },
+      }));
+      return;
+    }
+
+    const hasExistingImage =
+      Boolean(String(form.image_url || '').trim()) && form.image_url !== '/icons/icon-512.svg';
+
+    setSyncingChromeOne(platform);
+    setPlatformMetaStatus((prev) => ({ ...prev, [platform]: null }));
+    try {
+      const res = await extractOneViaChrome({
+        url,
+        skipImages: hasExistingImage,
+        headless: chromeHeadless,
+      });
+      const meta = res.data || {};
+      setForm((prev) => {
+        const stillHasImg =
+          Boolean(String(prev.image_url || '').trim()) && prev.image_url !== '/icons/icon-512.svg';
+        const nextPurchaseCount =
+          meta.soldCount !== null &&
+          meta.soldCount > 0 &&
+          (!prev.purchase_count || prev.purchase_count === '0')
+            ? String(meta.soldCount)
+            : prev.purchase_count;
+
+        return {
+          ...prev,
+          title: prev.title || meta.title || '',
+          purchase_count: nextPurchaseCount,
+          ...(!stillHasImg && meta.imageUrl ? { image_url: meta.imageUrl } : {}),
+          ...(!stillHasImg && Array.isArray(meta.galleryImages) && meta.galleryImages.length > 0
+            ? { gallery_images: meta.galleryImages }
+            : {}),
+          ...(meta.price !== null ? { [`${platform}_price`]: String(meta.price) } : {}),
+          ...(meta.rating !== null ? { [`${platform}_rating`]: String(meta.rating) } : {}),
+        };
+      });
+
+      const parts = [];
+      if (meta.price !== null) parts.push(`RM ${Number(meta.price).toFixed(2)}`);
+      if (meta.rating !== null) parts.push(`★ ${Number(meta.rating).toFixed(1)}`);
+      if (meta.soldCount) parts.push(`${Number(meta.soldCount).toLocaleString()} sold`);
+      if (hasExistingImage) {
+        parts.push('existing image kept');
+      } else if (meta.imageUrl) {
+        parts.push(`${meta.galleryImages?.length || 1} image(s) added`);
+      }
+
+      setPlatformMetaStatus((prev) => ({
+        ...prev,
+        [platform]: {
+          type: 'success',
+          text: `Chrome Synced: ${parts.join(' • ') || 'Link checked'}`,
+        },
+      }));
+    } catch (err) {
+      if (err?.status === 401) {
+        handleApiError(err);
+      } else {
+        setPlatformMetaStatus((prev) => ({
+          ...prev,
+          [platform]: { type: 'error', text: err.message },
+        }));
+      }
+    } finally {
+      setSyncingChromeOne('');
     }
   }
 
@@ -1816,11 +1905,20 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                             <button
                               type="button"
                               onClick={() => handleAutoFetch(pl.id)}
-                              disabled={fetchingMeta === pl.id}
+                              disabled={fetchingMeta === pl.id || syncingChromeOne === pl.id}
                               className={`inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold shadow-sm ${pl.textClass}`}
                             >
                               <Sparkles className="h-3 w-3" />
                               {fetchingMeta === pl.id ? 'Fetching...' : 'Auto-Fetch'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleChromeSyncOne(pl.id)}
+                              disabled={syncingChromeOne === pl.id || fetchingMeta === pl.id}
+                              className="inline-flex items-center gap-1 rounded-full bg-[#FFF0E6] px-2.5 py-1 text-[11px] font-bold text-[#C85A21] shadow-sm hover:bg-[#FFE4D1] disabled:opacity-60"
+                            >
+                              <Globe className="h-3 w-3" />
+                              {syncingChromeOne === pl.id ? 'Syncing...' : 'Chrome Sync'}
                             </button>
                             {enabledPlatforms.length > 1 && (
                               <button
