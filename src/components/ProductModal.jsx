@@ -7,6 +7,7 @@ import {
   ShoppingBag,
   Star,
   TrendingUp,
+  ZoomIn,
 } from 'lucide-react';
 import { syncProductPrices, trackPlatformClick } from '../api';
 import {
@@ -27,12 +28,14 @@ export function ProductModal({
 }) {
   const [product, setProduct] = useState(initialProduct);
   const [selectedImage, setSelectedImage] = useState(initialProduct?.image_url || '');
+  const [zoomedImage, setZoomedImage] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState(null); // { type: 'success' | 'error', text: string }
 
   useEffect(() => {
     setProduct(initialProduct);
     setSelectedImage(initialProduct?.image_url || '');
+    setZoomedImage('');
   }, [initialProduct]);
 
   useEffect(() => {
@@ -178,12 +181,27 @@ export function ProductModal({
           const activeSrc = selectedImage || product.image_url;
           return (
             <div className="mb-4">
-              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[24px] bg-white shadow-sm">
+              <div
+                onClick={() => setZoomedImage(activeSrc)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setZoomedImage(activeSrc);
+                  }
+                }}
+                aria-label="View full product picture"
+                className="group relative aspect-square max-h-80 w-full cursor-zoom-in overflow-hidden rounded-[24px] bg-white p-2 shadow-sm"
+              >
                 <img
                   src={activeSrc}
                   alt={product.title}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
                 />
+                <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-[#1E1D1B]/75 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
+                  <ZoomIn className="h-3.5 w-3.5" /> Full view
+                </span>
                 {savings >= 1 && cheapestName && (
                   <div className="absolute bottom-3 left-3 rounded-full bg-[#1E1D1B]/90 px-3.5 py-1.5 text-xs font-bold text-white backdrop-blur-sm">
                     Best deal: {cheapestName} saves RM {savings.toFixed(2)}
@@ -197,15 +215,37 @@ export function ProductModal({
                       key={imgUrl + idx}
                       type="button"
                       onClick={() => setSelectedImage(imgUrl)}
-                      className={`h-14 w-14 shrink-0 overflow-hidden rounded-xl border-2 bg-white transition ${
+                      className={`h-14 w-14 shrink-0 overflow-hidden rounded-xl border-2 bg-white p-0.5 transition ${
                         activeSrc === imgUrl
                           ? 'border-[#F58C56] ring-2 ring-[#F58C56]/25'
                           : 'border-transparent opacity-75 hover:opacity-100'
                       }`}
                     >
-                      <img src={imgUrl} alt="" className="h-full w-full object-cover" />
+                      <img src={imgUrl} alt="" className="h-full w-full object-contain" />
                     </button>
                   ))}
+                </div>
+              )}
+
+              {zoomedImage && (
+                <div
+                  className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4"
+                  onClick={() => setZoomedImage('')}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setZoomedImage('')}
+                    aria-label="Close full image"
+                    className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1D1C1A] shadow-lg hover:bg-[#F3EDE4]"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                  <img
+                    src={zoomedImage}
+                    alt={product.title}
+                    onClick={(e) => e.stopPropagation()}
+                    className="max-h-[90vh] max-w-[92vw] rounded-2xl bg-white object-contain p-2 shadow-2xl"
+                  />
                 </div>
               )}
             </div>

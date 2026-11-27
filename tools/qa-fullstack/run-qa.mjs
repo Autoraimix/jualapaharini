@@ -350,7 +350,7 @@ async function run() {
       if (req.url === '/short') {
         res.end('<html><body>Redirecting...<script>setTimeout(()=>location.replace("/pdp"), 120)</script></body></html>');
       } else {
-        res.end('<html><head><title>QA Redirect Product | Shopee Malaysia</title></head><body><div class="nt0EaI"><div class="pyzxvq">RM199.00</div></div><div class="Ocv3B8"><span class="PfWbfd">2.5k+</span> Sold</div><span class="product-rating-overview__rating-score">4.8</span></body></html>');
+        res.end('<html><head><title>【11.11 SALE】 QA Redirect Product | Shopee Malaysia</title></head><body><h1>Mall 【11.11 SALE】 QA Redirect Product</h1><div class="nt0EaI"><div class="pyzxvq">RM199.00</div></div><div class="Ocv3B8"><span class="PfWbfd">2.5k+</span> Sold</div><span class="product-rating-overview__rating-score">4.8</span></body></html>');
       }
     });
     await new Promise((r) => redirectSrv.listen(3098, '127.0.0.1', r));
@@ -467,8 +467,11 @@ with sync_playwright() as p:
     broken_imgs = page.evaluate("Array.from(document.querySelectorAll('img')).filter(i => i.complete && i.naturalWidth === 0).length")
     assert broken_imgs == 0, f"Found {broken_imgs} broken images on PC Home"
 
-    # Open first product modal and click Refresh Prices — must NOT show red "Storefront blocked" when verified SQLite price exists
+    # Open first product modal, verify Full view zoom lightbox & Refresh Prices
     page.locator("article").first.click()
+    page.get_by_role("button", name="View full product picture").click()
+    assert page.get_by_role("button", name="Close full image").is_visible(), "Full image lightbox must open on click"
+    page.get_by_role("button", name="Close full image").click()
     page.get_by_role("button", name="Refresh Prices").wait_for(timeout=10000)
     page.get_by_role("button", name="Refresh Prices").click()
     page.get_by_text("Verified catalog prices are up to date.").or_(page.get_by_text("Live price metadata refreshed.")).wait_for(timeout=10000)

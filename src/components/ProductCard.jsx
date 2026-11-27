@@ -71,12 +71,12 @@ export function ProductCard({ product, isFavorite, onToggleFavorite, onSelect })
       </div>
 
       {/* Center Image */}
-      <div className="relative mb-3 aspect-[4/3] w-full overflow-hidden rounded-[20px] bg-[#F7F3EE]">
+      <div className="relative mb-3 aspect-[4/3] w-full overflow-hidden rounded-[20px] bg-white p-1 ring-1 ring-[#F3EDE4]">
         <img
           src={product.image_url}
           alt={product.title}
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.03]"
         />
         {savings >= 1 && cheapestName && (
           <div className="absolute bottom-2.5 left-2.5 rounded-full bg-[#1E1D1B]/85 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">

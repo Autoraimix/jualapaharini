@@ -20,6 +20,11 @@ import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 EXTRACT_JS = r"""
 () => {
   const cleanText = (s) => (s || '').replace(/\s+/g, ' ').trim();
@@ -336,7 +341,8 @@ def detect_platform(url: str) -> str:
 
 
 def emit(payload: dict) -> None:
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
+    # ensure_ascii=True keeps stdout 100% safe on any Windows console/pipe encoding
+    print(json.dumps(payload, ensure_ascii=True), flush=True)
 
 
 def download_images_via_context(context, image_urls, uploads_dir: Path, limit: int = 6):
@@ -416,7 +422,7 @@ def run_test_html(html_path: str):
         page.set_content(html_content, wait_until="domcontentloaded")
         result = extract_from_page(page, page.context, None)
         browser.close()
-        print(json.dumps(result, ensure_ascii=False))
+        print(json.dumps(result, ensure_ascii=True))
 
 
 def format_gate_reason(headless: bool, final_url: str) -> str:
@@ -658,10 +664,19 @@ def run_cdp_batch(cdp_url: str, input_json_path: str):
             emit({"event": "error", "error": "No open browser context found in Chrome."})
             sys.exit(1)
 
-        # Reuse the real persistent Chrome context (non-incognito) and open a dedicated visible tab
-        # so we never overwrite the user's /admin tab or existing tabs
+        # Reuse the single existing non-localhost tab in the Real Chrome window so all links run
+        # sequentially in 1 tab without spawning duplicate tabs
         context = browser.contexts[0]
-        page = context.new_page()
+        sync_tabs = []
+        for pg in context.pages:
+            u = (pg.url or "").lower()
+            if (
+                u.startswith(("http://", "https://", "about:blank"))
+                and "localhost" not in u
+                and "127.0.0.1" not in u
+            ):
+                sync_tabs.append(pg)
+        page = sync_tabs[0] if sync_tabs else context.new_page()
         try:
             page.bring_to_front()
         except Exception:

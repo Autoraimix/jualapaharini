@@ -1292,6 +1292,7 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
 
   const child = spawn('python', [CHROME_SYNC_SCRIPT, '--cdp-url', CHROME_CDP_URL, '--input-json', jobFile], {
     cwd: ROOT_DIR,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   chromeSyncJob.child = child;
