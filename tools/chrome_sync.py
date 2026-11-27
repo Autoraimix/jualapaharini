@@ -452,10 +452,10 @@ def process_url_queue(
                 except Exception:
                     pass
 
-            page.goto(url, wait_until="domcontentloaded", timeout=35000)
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
 
             # Wait across client-side shortlink / affiliate redirects (e.g. s.shopee.com.my -> opaanlp -> product)
-            hop_deadline = time.time() + 8.0
+            hop_deadline = time.time() + 12.0
             while time.time() < hop_deadline:
                 cur = (page.url or "").lower()
                 if (
@@ -467,14 +467,14 @@ def process_url_queue(
                 time.sleep(0.4)
 
             try:
-                page.wait_for_load_state("domcontentloaded", timeout=10000)
+                page.wait_for_load_state("domcontentloaded", timeout=12000)
             except Exception:
                 pass
-            time.sleep(1.0)
+            time.sleep(1.2)
 
-            # Wait naturally for SPA price or sold text to render (up to ~18s), surviving extra redirects
+            # Wait naturally for SPA price or sold text to render (up to ~30s), surviving extra redirects
             start_wait = time.time()
-            deadline = start_wait + 18.0
+            deadline = start_wait + 30.0
             snapshot = None
             while time.time() < deadline:
                 snapshot = safe_evaluate(page, EXTRACT_JS)
@@ -482,10 +482,48 @@ def process_url_queue(
                     snapshot.get("images") or snapshot.get("soldCount") is not None
                 ):
                     break
-                # Give SPA hydration at least 2.5s before treating a banner/login check as final
-                if snapshot.get("blockedByGate") and (time.time() - start_wait) >= 2.5:
+                # Give SPA hydration at least 3.0s before treating a banner/login check as final
+                if snapshot.get("blockedByGate") and (time.time() - start_wait) >= 3.0:
                     break
-                time.sleep(0.6)
+                time.sleep(0.7)
+
+            # In visible Chrome mode, give the user up to 3 minutes directly in Chrome to complete login/verification
+            if snapshot and snapshot.get("blockedByGate") and not headless:
+                try:
+                    page.bring_to_front()
+                except Exception:
+                    pass
+                emit(
+                    {
+                        "event": "waiting_user",
+                        "index": idx,
+                        "total": len(urls),
+                        "url": url,
+                        "reason": (
+                            f"Verification or login open in Real Chrome ({(snapshot.get('finalUrl') or page.url)[:85]}). "
+                            "Take your time to complete it inside that Chrome tab — sync will continue automatically (waiting up to 3 mins)."
+                        ),
+                    }
+                )
+                wait_user_deadline = time.time() + 180.0
+                while time.time() < wait_user_deadline:
+                    time.sleep(1.2)
+                    try:
+                        snapshot = safe_evaluate(page, EXTRACT_JS)
+                    except Exception:
+                        continue
+                    cur_lower = (snapshot.get("finalUrl") or page.url or "").lower()
+                    still_gated_url = bool(re.search(r"/buyer/login|/verify/|captcha|challenge", cur_lower))
+                    if not snapshot.get("blockedByGate") and not still_gated_url:
+                        # Give newly unlocked product page a moment to render price/gallery
+                        time.sleep(2.0)
+                        hyd_end = time.time() + 15.0
+                        while time.time() < hyd_end:
+                            snapshot = safe_evaluate(page, EXTRACT_JS)
+                            if snapshot.get("price") is not None:
+                                break
+                            time.sleep(0.7)
+                        break
 
             if snapshot and snapshot.get("blockedByGate"):
                 if not headless:

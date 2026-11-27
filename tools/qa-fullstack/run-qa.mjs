@@ -272,6 +272,18 @@ async function run() {
       'Chrome status endpoint returns CDP status cleanly'
     );
 
+    const syncClearRes = await fetch(`${BASE_URL}/api/admin/chrome/sync-clear`, {
+      method: 'POST',
+      headers: authHeaders,
+    }).then((r) => r.json());
+    const syncStateCheck = await fetch(`${BASE_URL}/api/admin/chrome/sync-status`, {
+      headers: authHeaders,
+    }).then((r) => r.json());
+    assert(
+      syncClearRes.ok === true && Array.isArray(syncStateCheck.remainingUrls),
+      'Chrome sync-status and sync-clear endpoints work cleanly'
+    );
+
     const galleryCreate = await fetch(`${BASE_URL}/api/admin/products`, {
       method: 'POST',
       headers: authHeaders,

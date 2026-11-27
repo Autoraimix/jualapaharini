@@ -200,3 +200,10 @@ export function stopChromeBulkSync() {
     headers: adminHeaders(),
   });
 }
+
+export function clearChromeBulkSync() {
+  return apiRequest('/api/admin/chrome/sync-clear', {
+    method: 'POST',
+    headers: adminHeaders(),
+  });
+}

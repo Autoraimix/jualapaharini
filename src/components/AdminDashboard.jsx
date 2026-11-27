@@ -29,6 +29,7 @@ import {
   adminLogout,
   bulkImportProducts,
   changeAdminCredentials,
+  clearChromeBulkSync,
   createProduct,
   deleteProduct,
   exportProductsCsv,
@@ -735,11 +736,21 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   }, []);
 
   useEffect(() => {
-    if (!authed || !showChromeSync) return;
+    if (!authed) return;
     refreshChromeCdpStatus();
     pollChromeBulkSync()
-      .then((job) => setChromeJob(job))
+      .then((job) => {
+        setChromeJob(job);
+        if (job?.running || (job?.paused && job?.remainingUrls?.length > 0)) {
+          setShowChromeSync(true);
+        }
+      })
       .catch(() => {});
+  }, [authed, refreshChromeCdpStatus]);
+
+  useEffect(() => {
+    if (!authed || !showChromeSync) return;
+    refreshChromeCdpStatus();
   }, [authed, showChromeSync, refreshChromeCdpStatus]);
 
   useEffect(() => {
@@ -816,6 +827,16 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       const job = await stopChromeBulkSync();
       setChromeJob(job);
       setStatusBanner({ type: 'error', text: 'Real Chrome Sync stopped by admin.' });
+    } catch (err) {
+      handleApiError(err);
+    }
+  }
+
+  async function handleClearChromeJob() {
+    try {
+      const job = await clearChromeBulkSync();
+      setChromeJob(job);
+      setStatusBanner(null);
     } catch (err) {
       handleApiError(err);
     }
@@ -1261,7 +1282,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                     <input
                       type="number"
                       min="2"
-                      max="20"
+                      max="60"
                       step="0.5"
                       value={chromeDelaySec}
                       onChange={(e) => setChromeDelaySec(e.target.value)}
@@ -1311,11 +1332,22 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                         <span className="text-emerald-700">{chromeJob.succeeded}</span> • Failed:{' '}
                         <span className="text-rose-700">{chromeJob.failed}</span>
                       </span>
-                      {chromeJob.running && chromeJob.currentUrl && (
-                        <span className="max-w-xs truncate text-[#C85A21]">
-                          Opening: {chromeJob.currentUrl}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {chromeJob.running && chromeJob.currentUrl && (
+                          <span className="max-w-xs truncate text-[#C85A21]">
+                            Opening: {chromeJob.currentUrl}
+                          </span>
+                        )}
+                        {!chromeJob.running && (
+                          <button
+                            type="button"
+                            onClick={handleClearChromeJob}
+                            className="rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-[#6E655D] hover:bg-[#EFE9E0]"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="h-2 w-full overflow-hidden rounded-full bg-[#EFE9E0]">
@@ -1330,6 +1362,12 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                         }}
                       />
                     </div>
+
+                    {chromeJob.running && chromeJob.waitingUser && chromeJob.waitMessage && (
+                      <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                        {chromeJob.waitMessage}
+                      </div>
+                    )}
 
                     {chromeJob.paused && chromeJob.remainingUrls?.length > 0 && (
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">

@@ -1039,6 +1039,8 @@ let chromeSyncJob = {
   running: false,
   paused: false,
   pauseReason: '',
+  waitingUser: false,
+  waitMessage: '',
   total: 0,
   completed: 0,
   succeeded: 0,
@@ -1055,6 +1057,8 @@ function publicChromeJobSnapshot() {
     running: chromeSyncJob.running,
     paused: chromeSyncJob.paused,
     pauseReason: chromeSyncJob.pauseReason,
+    waitingUser: chromeSyncJob.waitingUser,
+    waitMessage: chromeSyncJob.waitMessage,
     total: chromeSyncJob.total,
     completed: chromeSyncJob.completed,
     succeeded: chromeSyncJob.succeeded,
@@ -1065,6 +1069,44 @@ function publicChromeJobSnapshot() {
     error: chromeSyncJob.error,
   };
 }
+
+function saveChromeJobState() {
+  try {
+    db.prepare(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).run('chrome_sync_job', JSON.stringify(publicChromeJobSnapshot()));
+  } catch {
+    // Non-fatal persistence safeguard
+  }
+}
+
+function loadChromeJobState() {
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('chrome_sync_job');
+    if (!row?.value) return;
+    const saved = JSON.parse(row.value);
+    if (!saved || typeof saved !== 'object') return;
+    const wasRunning = Boolean(saved.running);
+    const remaining = Array.isArray(saved.remainingUrls) ? saved.remainingUrls : [];
+    chromeSyncJob = {
+      ...chromeSyncJob,
+      ...saved,
+      running: false,
+      waitingUser: false,
+      waitMessage: '',
+      child: null,
+      paused: wasRunning && remaining.length > 0 ? true : Boolean(saved.paused),
+      pauseReason:
+        wasRunning && remaining.length > 0
+          ? saved.pauseReason || 'Previous sync interrupted — click Resume Remaining to continue.'
+          : saved.pauseReason || '',
+    };
+  } catch {
+    // Ignore corrupt saved job JSON
+  }
+}
+
+loadChromeJobState();
 
 app.get('/api/admin/chrome/status', requireAdmin, async (_req, res) => {
   const cdp = await getChromeCdpInfo();
@@ -1140,8 +1182,40 @@ app.post('/api/admin/chrome/sync-stop', requireAdmin, (_req, res) => {
     }
   }
   chromeSyncJob.running = false;
-  chromeSyncJob.paused = false;
+  chromeSyncJob.waitingUser = false;
+  chromeSyncJob.waitMessage = '';
   chromeSyncJob.currentUrl = '';
+  if (chromeSyncJob.remainingUrls?.length > 0) {
+    chromeSyncJob.paused = true;
+    chromeSyncJob.pauseReason = 'Stopped by admin — click Resume Remaining to continue.';
+  } else {
+    chromeSyncJob.paused = false;
+  }
+  saveChromeJobState();
+  res.json({ ok: true, ...publicChromeJobSnapshot() });
+});
+
+app.post('/api/admin/chrome/sync-clear', requireAdmin, (_req, res) => {
+  if (chromeSyncJob.running) {
+    return res.status(409).json({ error: 'Stop the running sync job before clearing.' });
+  }
+  chromeSyncJob = {
+    running: false,
+    paused: false,
+    pauseReason: '',
+    waitingUser: false,
+    waitMessage: '',
+    total: 0,
+    completed: 0,
+    succeeded: 0,
+    failed: 0,
+    currentUrl: '',
+    remainingUrls: [],
+    results: [],
+    error: '',
+    child: null,
+  };
+  saveChromeJobState();
   res.json({ ok: true, ...publicChromeJobSnapshot() });
 });
 
@@ -1183,7 +1257,7 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
   }
 
   const categorySlug = String(req.body?.categorySlug || 'tech').trim() || 'tech';
-  const delaySeconds = Math.min(20, Math.max(1.5, Number(req.body?.delaySeconds || 4.5)));
+  const delaySeconds = Math.min(60, Math.max(1.5, Number(req.body?.delaySeconds || 4.5)));
 
   const jobFile = path.join(os.tmpdir(), `hja_chrome_sync_${Date.now()}.json`);
   fs.writeFileSync(
@@ -1202,6 +1276,8 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
     running: true,
     paused: false,
     pauseReason: '',
+    waitingUser: false,
+    waitMessage: '',
     total: uniqueUrls.length,
     completed: 0,
     succeeded: 0,
@@ -1212,6 +1288,7 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
     error: '',
     child: null,
   };
+  saveChromeJobState();
 
   const child = spawn('python', [CHROME_SYNC_SCRIPT, '--cdp-url', CHROME_CDP_URL, '--input-json', jobFile], {
     cwd: ROOT_DIR,
@@ -1229,7 +1306,15 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
     }
     if (msg.event === 'progress') {
       chromeSyncJob.currentUrl = msg.url || '';
+      chromeSyncJob.waitingUser = false;
+      chromeSyncJob.waitMessage = '';
+    } else if (msg.event === 'waiting_user') {
+      chromeSyncJob.waitingUser = true;
+      chromeSyncJob.waitMessage = msg.reason || 'Waiting for verification in Chrome...';
+      saveChromeJobState();
     } else if (msg.event === 'result') {
+      chromeSyncJob.waitingUser = false;
+      chromeSyncJob.waitMessage = '';
       chromeSyncJob.completed++;
       chromeSyncJob.remainingUrls = uniqueUrls.slice(msg.index + 1);
       if (msg.ok && msg.data) {
@@ -1265,15 +1350,22 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
           error: msg.error || 'Extraction failed',
         });
       }
+      saveChromeJobState();
     } else if (msg.event === 'paused_verification') {
       chromeSyncJob.paused = true;
       chromeSyncJob.running = false;
+      chromeSyncJob.waitingUser = false;
+      chromeSyncJob.waitMessage = '';
       chromeSyncJob.pauseReason = msg.reason || 'Verification required in Chrome.';
       chromeSyncJob.remainingUrls = uniqueUrls.slice(msg.index || 0);
       chromeSyncJob.currentUrl = '';
+      saveChromeJobState();
     } else if (msg.event === 'error') {
       chromeSyncJob.error = msg.error || 'Chrome sync error';
       chromeSyncJob.running = false;
+      chromeSyncJob.waitingUser = false;
+      chromeSyncJob.waitMessage = '';
+      saveChromeJobState();
     }
   });
 
@@ -1284,10 +1376,13 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
 
   child.on('close', (code) => {
     chromeSyncJob.running = false;
+    chromeSyncJob.waitingUser = false;
+    chromeSyncJob.waitMessage = '';
     chromeSyncJob.child = null;
     if (!chromeSyncJob.paused && code !== 0 && code !== 2 && !chromeSyncJob.error && stderrBuf) {
       chromeSyncJob.error = stderrBuf.trim().slice(0, 300);
     }
+    saveChromeJobState();
     try {
       fs.unlinkSync(jobFile);
     } catch {
