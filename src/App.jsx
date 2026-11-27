@@ -304,8 +304,8 @@ export default function App() {
               </button>
             )}
             <div className="rounded-2xl bg-white/5 px-3.5 py-3 text-[11px] leading-relaxed text-[#A69F98]">
-              <div className="font-bold text-white">Shopee &amp; TikTok Sync</div>
-              Compare live MYR prices across verified affiliate picks.
+              <div className="font-bold text-white">Smart Price Comparison</div>
+              Compare prices across online stores in one place to find the best deal.
             </div>
           </div>
         </aside>
