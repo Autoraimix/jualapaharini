@@ -567,7 +567,7 @@ with sync_playwright() as p:
     assert page.get_by_role("button", name="Open Real Chrome").is_visible(), "Open Real Chrome button must be visible"
     assert page.get_by_role("button", name="Start Bulk Chrome Sync").is_visible(), "Start Bulk Chrome Sync button must be visible"
     assert page.get_by_text("Run in Headless Chrome").is_visible(), "Headless Chrome toggle option must be visible"
-    assert page.get_by_text("Auto-close Shopee Chrome").is_visible(), "Auto-close Shopee Chrome toggle option must be visible"
+    assert page.get_by_text("Auto-close Chrome window").is_visible(), "Auto-close Chrome window toggle option must be visible"
 
     # Verify SQLite Catalog 10/page pagination, Next/Previous, See All Products & Smart Search
     row_count_p1 = page.locator("[data-testid='admin-catalog-row']").count()

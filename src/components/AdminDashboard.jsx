@@ -1482,7 +1482,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                       className="accent-[#F58C56]"
                     />
                     <span>
-                      <span className="font-bold">Auto-close Shopee Chrome</span> once all links
+                      <span className="font-bold">Auto-close Chrome window</span> once all links
                       complete
                     </span>
                   </label>
