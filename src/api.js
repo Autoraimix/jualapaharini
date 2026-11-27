@@ -154,3 +154,10 @@ export function changeAdminCredentials(payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export function syncAllProducts() {
+  return apiRequest('/api/admin/sync-all', {
+    method: 'POST',
+    headers: adminHeaders(),
+  });
+}

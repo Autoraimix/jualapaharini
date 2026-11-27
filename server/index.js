@@ -291,28 +291,7 @@ app.post('/api/products/:id/click', (req, res) => {
 });
 
 // Best-effort auto price sync when viewing a product or clicking refresh
-app.post('/api/products/:id/sync-prices', async (req, res) => {
-  const force = Boolean(req.body?.force);
-  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
-  if (!product) return res.status(404).json({ error: 'Product not found.' });
-
-  if (!force && product.last_price_sync) {
-    const lastSyncMs = new Date(product.last_price_sync + 'Z').getTime();
-    const ageMinutes = (Date.now() - lastSyncMs) / 60000;
-    if (Number.isFinite(ageMinutes) && ageMinutes < PRICE_SYNC_TTL_MINUTES) {
-      const cachedReport = { cached: true };
-      for (const pl of PLATFORMS) {
-        if (product[`${pl}_url`]) {
-          cachedReport[pl] = {
-            status: product[`${pl}_price_status`],
-            price: product[`${pl}_price`],
-          };
-        }
-      }
-      return res.json({ product, syncReport: cachedReport });
-    }
-  }
-
+async function syncSingleProductPrices(product) {
   const fetchedEntries = await Promise.all(
     PLATFORMS.map(async (pl) => {
       const url = product[`${pl}_url`];
@@ -374,7 +353,71 @@ app.post('/api/products/:id/sync-prices', async (req, res) => {
   ).run(updateValues);
 
   const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(product.id);
-  res.json({ product: updated, syncReport });
+  return { product: updated, syncReport };
+}
+
+app.post('/api/products/:id/sync-prices', async (req, res) => {
+  const force = Boolean(req.body?.force);
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+  if (!product) return res.status(404).json({ error: 'Product not found.' });
+
+  if (!force && product.last_price_sync) {
+    const lastSyncMs = new Date(product.last_price_sync + 'Z').getTime();
+    const ageMinutes = (Date.now() - lastSyncMs) / 60000;
+    if (Number.isFinite(ageMinutes) && ageMinutes < PRICE_SYNC_TTL_MINUTES) {
+      const cachedReport = { cached: true };
+      for (const pl of PLATFORMS) {
+        if (product[`${pl}_url`]) {
+          cachedReport[pl] = {
+            status: product[`${pl}_price_status`],
+            price: product[`${pl}_price`],
+          };
+        }
+      }
+      return res.json({ product, syncReport: cachedReport });
+    }
+  }
+
+  const result = await syncSingleProductPrices(product);
+  res.json(result);
+});
+
+app.post('/api/admin/sync-all', requireAdmin, async (_req, res) => {
+  const products = db.prepare('SELECT * FROM products ORDER BY id ASC').all();
+  let syncedProducts = 0;
+  let syncedPlatforms = 0;
+  let blockedPlatforms = 0;
+  let errorPlatforms = 0;
+
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < products.length; i += BATCH_SIZE) {
+    const batch = products.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map((p) => syncSingleProductPrices(p)));
+    for (const { syncReport } of results) {
+      let productSynced = false;
+      for (const pl of PLATFORMS) {
+        const rep = syncReport[pl];
+        if (!rep) continue;
+        if (rep.status === 'synced') {
+          syncedPlatforms++;
+          productSynced = true;
+        } else if (rep.status === 'blocked') {
+          blockedPlatforms++;
+        } else {
+          errorPlatforms++;
+        }
+      }
+      if (productSynced) syncedProducts++;
+    }
+  }
+
+  res.json({
+    total: products.length,
+    syncedProducts,
+    syncedPlatforms,
+    blockedPlatforms,
+    errorPlatforms,
+  });
 });
 
 // ---------- Admin Auth & Management ----------

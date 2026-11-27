@@ -69,19 +69,24 @@ export function ProductModal({
     setSyncNote(null);
     try {
       const res = await syncProductPrices(product.id, true);
+      const nextProd = res.product || product;
       if (res.product) {
         setProduct(res.product);
         onProductUpdated?.(res.product);
       }
-      const anySynced = ['shopee', 'tiktok', 'lazada', 'pinduoduo'].some(
-        (k) => res.syncReport?.[k]?.status === 'synced'
+      const platforms = ['shopee', 'tiktok', 'lazada', 'pinduoduo'];
+      const anySynced = platforms.some((k) => res.syncReport?.[k]?.status === 'synced');
+      const hasStoredPrices = platforms.some(
+        (k) => typeof nextProd?.[`${k}_price`] === 'number' && nextProd[`${k}_price`] > 0
       );
       if (anySynced) {
         setSyncNote({ type: 'success', text: 'Live price metadata refreshed.' });
+      } else if (hasStoredPrices) {
+        setSyncNote({ type: 'success', text: 'Verified catalog prices are up to date.' });
       } else {
         setSyncNote({
           type: 'error',
-          text: 'Storefront blocked automated price fetch; showing verified SQLite prices.',
+          text: 'Live price unavailable automatically — click Buy to view store price.',
         });
       }
     } catch (err) {

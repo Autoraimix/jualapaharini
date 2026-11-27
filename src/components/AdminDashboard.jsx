@@ -34,6 +34,7 @@ import {
   fetchUrlMetadata,
   getStoredToken,
   setStoredToken,
+  syncAllProducts,
   updateProduct,
   uploadProductImage,
   verifyAdminSession,
@@ -128,6 +129,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   const [importFormat, setImportFormat] = useState('csv');
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
+  const [syncingAll, setSyncingAll] = useState(false);
 
   // Change Password menu fields (Username -> Current -> New -> Confirm)
   const [cpUsername, setCpUsername] = useState('');
@@ -638,6 +640,31 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     }
   }
 
+  async function handleSyncAllPrices() {
+    setSyncingAll(true);
+    setStatusBanner(null);
+    try {
+      const res = await syncAllProducts();
+      await onCatalogChanged();
+      loadAnalytics();
+      if (res.syncedPlatforms > 0) {
+        setStatusBanner({
+          type: 'success',
+          text: `Synced ${res.syncedPlatforms} live store price(s) across ${res.syncedProducts} of ${res.total} products.`,
+        });
+      } else {
+        setStatusBanner({
+          type: 'error',
+          text: `0 live prices auto-synced (${res.blockedPlatforms} link(s) blocked by storefront without Shopee OpenAPI keys). Add SHOPEE_APP_ID / SHOPEE_APP_SECRET in .env or bulk-update via CSV Import.`,
+        });
+      }
+    } catch (err) {
+      handleApiError(err);
+    } finally {
+      setSyncingAll(false);
+    }
+  }
+
   function handleDownloadSampleCsv() {
     const sample = [
       'code,title,description,category_slug,tags,image_url,shopee_url,shopee_price,shopee_rating,tiktok_url,tiktok_price,tiktok_rating,lazada_url,lazada_price,lazada_rating,pinduoduo_url,pinduoduo_price,pinduoduo_rating,purchase_count',
@@ -887,6 +914,15 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
               className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FAF7F2] px-4 py-2.5 text-xs font-bold text-[#1D1C1A] hover:bg-[#EFE9E0]"
             >
               <FileSpreadsheet className="h-3.5 w-3.5" /> Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleSyncAllPrices}
+              disabled={syncingAll}
+              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FAF7F2] px-4 py-2.5 text-xs font-bold text-[#1D1C1A] hover:bg-[#EFE9E0] disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncingAll ? 'animate-spin text-[#F58C56]' : ''}`} />
+              {syncingAll ? 'Syncing All...' : 'Sync All Prices'}
             </button>
           </div>
         )}

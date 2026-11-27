@@ -247,6 +247,20 @@ async function run() {
     }).then((r) => r.json());
     assert(reimportRes.importedCount >= 12, 'JSON import accepts exported { products } format');
 
+    // Bulk Sync All Prices endpoint (requires auth)
+    const unauthSyncAll = await fetch(`${BASE_URL}/api/admin/sync-all`, { method: 'POST' });
+    assert(unauthSyncAll.status === 401, 'Sync All Prices rejects unauthenticated requests');
+    const syncAllRes = await fetch(`${BASE_URL}/api/admin/sync-all`, {
+      method: 'POST',
+      headers: authHeaders,
+    });
+    const syncAllJson = await syncAllRes.json();
+    assert(
+      syncAllRes.ok && typeof syncAllJson.total === 'number' && syncAllJson.total >= 12,
+      'Sync All Prices endpoint processes catalog cleanly',
+      JSON.stringify(syncAllJson)
+    );
+
     // Logout test
     const logoutRes = await fetch(`${BASE_URL}/api/admin/logout`, {
       method: 'POST',
@@ -311,6 +325,15 @@ with sync_playwright() as p:
     broken_imgs = page.evaluate("Array.from(document.querySelectorAll('img')).filter(i => i.complete && i.naturalWidth === 0).length")
     assert broken_imgs == 0, f"Found {broken_imgs} broken images on PC Home"
 
+    # Open first product modal and click Refresh Prices — must NOT show red "Storefront blocked" when verified SQLite price exists
+    page.locator("article").first.click()
+    page.get_by_role("button", name="Refresh Prices").wait_for(timeout=10000)
+    page.get_by_role("button", name="Refresh Prices").click()
+    page.get_by_text("Verified catalog prices are up to date.").or_(page.get_by_text("Live price metadata refreshed.")).wait_for(timeout=10000)
+    assert page.get_by_text("Storefront blocked").count() == 0, "Public modal must not show alarming Storefront blocked error when SQLite prices exist"
+    page.get_by_role("button", name="Close product details").click()
+    page.wait_for_timeout(200)
+
     # Navigate directly to /admin
     page.goto("${BASE_URL}/admin", wait_until="networkidle")
     page.wait_for_timeout(400)
@@ -323,6 +346,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(600)
 
     assert page.get_by_role("button", name="Log Out").is_visible(), "Log Out button must be visible"
+    assert page.get_by_role("button", name="Sync All Prices").is_visible(), "Sync All Prices button must be visible"
 
     # Check Change Password menu field order
     page.get_by_role("button", name="Change Password").click()
