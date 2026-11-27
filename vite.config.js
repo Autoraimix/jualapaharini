@@ -11,10 +11,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.svg', 'icons/*.svg'],
       manifest: {
-        name: 'HariniJualApa — Smart Deals & Affiliate Picks',
-        short_name: 'HariniJualApa',
+        name: 'BeliApaHarini — Smart Price Comparison',
+        short_name: 'BeliApaHarini',
         description:
-          'Curated Shopee & TikTok Shop finds with smart search, live price comparison, top purchase & reliability rankings.',
+          'Smart price comparison across online stores with live price checks, top purchase & reliability rankings.',
         theme_color: '#F7F3EE',
         background_color: '#F7F3EE',
         display: 'standalone',

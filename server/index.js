@@ -905,7 +905,7 @@ app.get('/api/admin/export', requireAdmin, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="harinijualapa-export-${new Date().toISOString().slice(0, 10)}.csv"`
+      `attachment; filename="beliapaharini-export-${new Date().toISOString().slice(0, 10)}.csv"`
     );
     return res.send(lines.join('\n'));
   }
@@ -1637,5 +1637,5 @@ if (fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
 }
 
 app.listen(PORT, () => {
-  console.log(`HariniJualApa API running on http://localhost:${PORT}`);
+  console.log(`BeliApaHarini API running on http://localhost:${PORT}`);
 });

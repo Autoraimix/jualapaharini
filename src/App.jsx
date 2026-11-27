@@ -47,9 +47,9 @@ function isAdminUrl() {
 export default function App() {
   const [activeTab, setActiveTab] = useState(() => (isAdminUrl() ? 'admin' : 'home')); // 'home' | 'top' | 'saved' | 'admin'
   const [storeSettings, setStoreSettings] = useState({
-    store_name: 'HariniJualApa',
-    store_handle: '@harinijualapa',
-    store_tagline: 'Curated daily finds — compare Shopee & TikTok prices.',
+    store_name: 'BeliApaHarini',
+    store_handle: '@beliapaharini',
+    store_tagline: 'Compare prices across online stores and find the best deal in one place.',
   });
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
@@ -316,7 +316,7 @@ export default function App() {
             <div className="flex items-center gap-2.5 px-1">
               <img
                 src="/favicon.svg"
-                alt={storeSettings.store_name || 'HariniJualApa'}
+                alt={storeSettings.store_name || 'BeliApaHarini'}
                 className="h-9 w-9 shrink-0 rounded-xl shadow-sm"
               />
               <span className="text-lg font-extrabold tracking-tight text-white">
@@ -390,7 +390,7 @@ export default function App() {
             <div className="flex items-center gap-2.5 md:hidden">
               <img
                 src="/favicon.svg"
-                alt={storeSettings.store_name || 'HariniJualApa'}
+                alt={storeSettings.store_name || 'BeliApaHarini'}
                 className="h-9 w-9 shrink-0 rounded-xl shadow-sm"
               />
               <h1 className="text-lg font-extrabold tracking-tight text-[#1D1C1A]">

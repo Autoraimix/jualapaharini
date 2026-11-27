@@ -52,7 +52,7 @@ async function waitForServer(url, timeoutMs = 10000) {
 }
 
 async function run() {
-  console.log('\n=== HariniJualApa Full-Stack QA Suite ===\n');
+  console.log('\n=== BeliApaHarini Full-Stack QA Suite ===\n');
 
   // 1. Production Build & PWA Check
   console.log('1. Checking Vite Production Build & PWA assets...');
@@ -523,6 +523,8 @@ with sync_playwright() as p:
 
     admin_btn_count = page.locator("aside").get_by_text("Admin").count()
     assert admin_btn_count == 0, f"Admin button should be hidden on PC sidebar, found {admin_btn_count}"
+    assert page.locator("aside").get_by_text("BeliApaHarini").is_visible(), "Brand name BeliApaHarini must appear in sidebar"
+    assert "BeliApaHarini" in page.title(), f"Page title must include BeliApaHarini, got {page.title()}"
 
     cols = page.eval_on_selector("main .grid", "el => getComputedStyle(el).gridTemplateColumns.split(' ').length")
     assert cols == 5, f"PC Home should have 5 products per row, got {cols}"

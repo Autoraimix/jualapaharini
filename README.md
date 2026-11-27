@@ -1,4 +1,4 @@
-# HariniJualApa — Smart Affiliate Price Finder (PWA + SQLite)
+# BeliApaHarini — Smart Price Finder (PWA + SQLite)
 
 A mobile-first Progressive Web App (PWA) and full-width desktop storefront powered by **React + Vite + Tailwind CSS**, **Node.js / Express**, and **SQLite** (`better-sqlite3`).
 

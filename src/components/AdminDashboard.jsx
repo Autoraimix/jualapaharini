@@ -780,7 +780,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       triggerDownload(
         JSON.stringify(data.products || [], null, 2),
         'application/json;charset=utf-8',
-        `harinijualapa-export-${new Date().toISOString().slice(0, 10)}.json`
+        `beliapaharini-export-${new Date().toISOString().slice(0, 10)}.json`
       );
       setStatusBanner({ type: 'success', text: `Exported ${count} products to JSON.` });
     } catch (err) {
@@ -795,7 +795,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       triggerDownload(
         csvText,
         'text/csv;charset=utf-8',
-        `harinijualapa-export-${new Date().toISOString().slice(0, 10)}.csv`
+        `beliapaharini-export-${new Date().toISOString().slice(0, 10)}.csv`
       );
       setStatusBanner({ type: 'success', text: 'Exported catalog to CSV.' });
     } catch (err) {
@@ -997,7 +997,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       'code,title,description,category_slug,tags,image_url,shopee_url,shopee_price,shopee_rating,tiktok_url,tiktok_price,tiktok_rating,lazada_url,lazada_price,lazada_rating,pinduoduo_url,pinduoduo_price,pinduoduo_rating,purchase_count',
       ',Sample Powerbank 10000mAh,Fast charging slim powerbank,tech,"powerbank,charger",/icons/icon-512.svg,https://shopee.com.my/sample,49.90,4.9,https://www.tiktok.com/sample,45.00,4.8,https://www.lazada.com.my/sample,47.50,4.8,,,350',
     ].join('\n');
-    triggerDownload(sample, 'text/csv;charset=utf-8', 'harinijualapa-sample-template.csv');
+    triggerDownload(sample, 'text/csv;charset=utf-8', 'beliapaharini-sample-template.csv');
     setStatusBanner({ type: 'success', text: 'Sample CSV template downloaded.' });
   }
 

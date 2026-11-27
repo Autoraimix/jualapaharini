@@ -213,8 +213,8 @@ export function initDatabase() {
   }
 
   const defaults = [
-    ['store_name', 'HariniJualApa'],
-    ['store_handle', '@harinijualapa'],
+    ['store_name', 'BeliApaHarini'],
+    ['store_handle', '@beliapaharini'],
     [
       'store_tagline',
       'Compare prices across online stores and find the best deal in one place.',
@@ -227,6 +227,17 @@ export function initDatabase() {
   for (const [k, v] of defaults) {
     insertSetting.run(k, v);
   }
+
+  // Migrate existing SQLite store branding cleanly without touching products/data
+  db.prepare(
+    "UPDATE settings SET value = 'BeliApaHarini' WHERE key = 'store_name' AND value = 'HariniJualApa'"
+  ).run();
+  db.prepare(
+    "UPDATE settings SET value = '@beliapaharini' WHERE key = 'store_handle' AND value = '@harinijualapa'"
+  ).run();
+  db.prepare(
+    "UPDATE settings SET value = 'Compare prices across online stores and find the best deal in one place.' WHERE key = 'store_tagline' AND value LIKE '%Shopee%'"
+  ).run();
 }
 
 initDatabase();

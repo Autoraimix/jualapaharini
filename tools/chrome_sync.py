@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Real Chrome CDP Product Extractor for HariniJualApa.
+Real Chrome CDP Product Extractor for BeliApaHarini.
 
 Connects to an existing desktop Google Chrome instance started with
 --remote-debugging-port=9222 (non-incognito persistent profile where the admin
