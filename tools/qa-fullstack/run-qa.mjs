@@ -343,6 +343,44 @@ async function run() {
       chromeExtractRun.stdout + chromeExtractRun.stderr
     );
 
+    // Test chrome_sync.py DOM extractor against exact Lazada v2 PDP HTML
+    const lazadaSamplePath = path.join(ROOT, 'data', 'qa_lazada_sample.html');
+    fs.writeFileSync(
+      lazadaSamplePath,
+      `<!doctype html><html><head><title>UGREEN 65W | Lazada</title></head><body>
+      <h1 class="pdp-mod-product-badge-title-v2"><img src="https://img.lazcdn.com/g/tps/imgextra/i4/O1CN01YxEyp41Pm0TSbDFdc_!!6000000001882-2-tps-130-40.png" class="pdp-mod-product-badge" alt="LazMall">【SIRIM Certificate】UGREEN 3 Ports 65W GaN Charger</h1>
+      <div class="pdp-review-summary-v2"><span class="container-star-v2-score">5</span><span class="container-star-v2-count">(1396)</span></div>
+      <div class="pdp-v2-product-price-content"><div class="pdp-v2-product-price-content-salePrice"><span class="pdp-v2-product-price-content-salePrice-amount">RM60.03</span></div><div class="pdp-v2-product-price-content-originalPrice"><span class="pdp-v2-product-price-content-originalPrice-amount">RM159.00</span></div></div>
+      <div id="module_item_gallery_1"><div class="item-gallery-v2">
+        <div class="gallery-preview-panel-v2"><img class="gallery-preview-panel-v2__image" src="https://img.lazcdn.com/g/p/f5aecef1b2f751ce38b5ec8670031c28.jpg_720x720q80.jpg_.webp"></div>
+        <div class="item-gallery-v2__thumbnail"><img class="item-gallery-v2__thumbnail-image" src="https://img.lazcdn.com/g/p/f5aecef1b2f751ce38b5ec8670031c28.jpg_80x80q80.jpg_.webp"></div>
+        <div class="item-gallery-v2__thumbnail"><img class="item-gallery-v2__thumbnail-image" src="https://img.lazcdn.com/g/p/6032ab2b113df1f7e0986df0fc0a3b69.jpg_80x80q80.jpg_.webp"></div>
+        <div class="item-gallery-v2__thumbnail"><img class="item-gallery-v2__thumbnail-image" src="https://img.lazcdn.com/g/p/71ecad0e80ebb84402c047ab232dcc38.jpg_80x80q80.jpg_.webp"></div>
+      </div></div>
+      </body></html>`,
+      'utf8'
+    );
+    const lazadaExtractRun = spawnSync(
+      'python',
+      ['tools/chrome_sync.py', '--test-html', lazadaSamplePath],
+      { cwd: ROOT, encoding: 'utf8' }
+    );
+    try {
+      fs.unlinkSync(lazadaSamplePath);
+    } catch {}
+    const extractedLazada = JSON.parse((lazadaExtractRun.stdout || '{}').trim() || '{}');
+    assert(
+      lazadaExtractRun.status === 0 &&
+        extractedLazada.title?.includes('UGREEN 3 Ports 65W GaN Charger') &&
+        extractedLazada.price === 60.03 &&
+        extractedLazada.rating === 5 &&
+        Array.isArray(extractedLazada.images) &&
+        extractedLazada.images.length === 3 &&
+        extractedLazada.images[0] === 'https://img.lazcdn.com/g/p/f5aecef1b2f751ce38b5ec8670031c28.jpg',
+      'chrome_sync.py extracts Lazada v2 sale price (RM60.03, not RM159), rating 5.0, title, and deduplicated full-res lazcdn gallery images',
+      lazadaExtractRun.stdout + lazadaExtractRun.stderr
+    );
+
     // Test Headless mode + safe_evaluate surviving mid-load client JS redirect
     const http = await import('node:http');
     const redirectSrv = http.createServer((req, res) => {

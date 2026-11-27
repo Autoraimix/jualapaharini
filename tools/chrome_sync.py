@@ -89,6 +89,8 @@ EXTRACT_JS = r"""
     '.nt0EaI',
     '[class*="product-briefing"] .pyzxvq',
     '.pqTWkA',
+    '.pdp-v2-product-price-content-salePrice-amount',
+    '.pdp-v2-product-price-content-salePrice',
     '.pdp-price_color_orange',
     '.pdp-price',
   ];
@@ -183,13 +185,15 @@ EXTRACT_JS = r"""
     }
   }
 
-  // 4. Rating Extraction (Shopee .product-rating-overview__rating-score + PDP header fallback)
+  // 4. Rating Extraction (Shopee .product-rating-overview__rating-score + Lazada v2 + PDP fallback)
   let rating = null;
   const ratingSelectors = [
     '.product-rating-overview__rating-score',
     '.product-rating-overview__score-wrapper',
     '.shopee-product-rating__rating',
     '[class*="rating-score"]',
+    '.container-star-v2-score',
+    '.summary .score-average',
   ];
   for (const sel of ratingSelectors) {
     for (const el of document.querySelectorAll(sel)) {
@@ -227,7 +231,9 @@ EXTRACT_JS = r"""
 
   // 5. Title Extraction
   let title = '';
-  const heading = document.querySelector('h1, [class*="product-briefing"] span, [data-testid="pdp-product-title"]');
+  const heading = document.querySelector(
+    'h1.pdp-mod-product-badge-title-v2, h1, [class*="product-briefing"] span, [data-testid="pdp-product-title"]'
+  );
   if (heading) {
     title = cleanText(heading.innerText || heading.textContent).replace(/^(?:Mall|Preferred\+?)\s+/i, '');
   }
@@ -252,7 +258,8 @@ EXTRACT_JS = r"""
       lower.includes('deo.shopeemobile.com') ||
       lower.includes('.svg') ||
       lower.includes('badge') ||
-      lower.includes('icon')
+      lower.includes('icon') ||
+      lower.includes('/tps/')
     ) {
       return '';
     }
@@ -260,6 +267,9 @@ EXTRACT_JS = r"""
       // Convert resize/thumbnail URLs to full high-res image URL
       u = u.replace(/@resize_w\d+_nl(?:\.webp)?$/i, '');
       u = u.replace(/_tn$/i, '');
+    } else if (lower.includes('lazcdn.com/g/p/')) {
+      // Convert Lazada _720x720q80.jpg_.webp / _80x80q80.jpg_.webp thumbnails to full original photo
+      u = u.replace(/_\d+x\d+q\d+\.(?:jpg|jpeg|png)(?:_\.webp)?$/i, '');
     }
     return u;
   };
@@ -290,6 +300,18 @@ EXTRACT_JS = r"""
       // Put video cover thumbnails after actual product photos so hero image is clean
       pushImg(src, hasVideoOverlay || /_cover(?:@|$)/i.test(src));
     }
+  }
+
+  // Lazada v2 PDP gallery (.gallery-preview-panel-v2__image + .item-gallery-v2__thumbnail-image)
+  for (const el of document.querySelectorAll(
+    '.gallery-preview-panel-v2__image, #module_item_gallery_1 .gallery-preview-panel-v2 img'
+  )) {
+    pushImg(el.getAttribute('src') || el.currentSrc || '', false);
+  }
+  for (const el of document.querySelectorAll(
+    '.item-gallery-v2__thumbnail-image, #module_item_gallery_1 .item-gallery-v2__thumbnail img'
+  )) {
+    pushImg(el.getAttribute('src') || el.currentSrc || '', false);
   }
 
   // Fallback for generic Shopee or TikTok/Lazada/Pinduoduo pages
@@ -460,12 +482,14 @@ def process_url_queue(
 
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
 
-            # Wait across client-side shortlink / affiliate redirects (e.g. s.shopee.com.my -> opaanlp -> product)
+            # Wait across client-side shortlink / affiliate redirects (Shopee, Lazada, TikTok)
             hop_deadline = time.time() + 12.0
             while time.time() < hop_deadline:
                 cur = (page.url or "").lower()
                 if (
                     "s.shopee." not in cur
+                    and "s.lazada." not in cur
+                    and "vt.tiktok." not in cur
                     and "/opaanlp/" not in cur
                     and "universal-link" not in cur
                 ):
