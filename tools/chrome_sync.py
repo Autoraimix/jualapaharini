@@ -178,9 +178,29 @@ EXTRACT_JS = r"""
     }
   }
 
-  // 4. Rating Extraction
+  // 4. Rating Extraction (Shopee .product-rating-overview__rating-score + PDP header fallback)
   let rating = null;
-  if (ldProduct?.aggregateRating?.ratingValue) {
+  const ratingSelectors = [
+    '.product-rating-overview__rating-score',
+    '.product-rating-overview__score-wrapper',
+    '.shopee-product-rating__rating',
+    '[class*="rating-score"]',
+  ];
+  for (const sel of ratingSelectors) {
+    for (const el of document.querySelectorAll(sel)) {
+      const txt = cleanText(el.innerText || el.textContent);
+      const m = txt.match(/([1-5](?:\.\d+)?)/);
+      if (m) {
+        const val = Number(m[1]);
+        if (Number.isFinite(val) && val >= 1 && val <= 5) {
+          rating = Number(val.toFixed(1));
+          break;
+        }
+      }
+    }
+    if (rating !== null) break;
+  }
+  if (rating === null && ldProduct?.aggregateRating?.ratingValue) {
     const r = Number(ldProduct.aggregateRating.ratingValue);
     if (Number.isFinite(r) && r >= 1 && r <= 5) rating = Number(r.toFixed(1));
   }
@@ -188,11 +208,10 @@ EXTRACT_JS = r"""
     for (const el of document.querySelectorAll('div, span, button')) {
       const txt = cleanText(el.innerText || '');
       if (/^[1-5]\.\d$/.test(txt)) {
-        const parentTxt = cleanText(el.parentElement?.innerText || '');
         const grandTxt = cleanText(el.parentElement?.parentElement?.innerText || '');
-        if (/ratings?|sold|reviews?|★/i.test(grandTxt) || el.parentElement?.querySelector('svg')) {
+        if (/ratings?|sold|reviews?|★|out of 5/i.test(grandTxt) || el.parentElement?.querySelector('svg')) {
           const rect = el.getBoundingClientRect();
-          if (rect.top >= 0 && rect.top < 800) {
+          if (rect.top >= 0 && rect.top < 1200) {
             rating = Number(Number(txt).toFixed(1));
             break;
           }

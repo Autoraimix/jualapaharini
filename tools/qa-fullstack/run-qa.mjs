@@ -290,13 +290,13 @@ async function run() {
       'gallery_images persists in SQLite across creates'
     );
 
-    // Test chrome_sync.py DOM extractor against exact Shopee PDP HTML (.nt0EaI, .Ocv3B8, .C21rQm)
+    // Test chrome_sync.py DOM extractor against exact Shopee PDP HTML (.nt0EaI, .Ocv3B8, .C21rQm, .product-rating-overview__rating-score)
     const sampleHtmlPath = path.join(ROOT, 'data', 'qa_shopee_sample.html');
     fs.writeFileSync(
       sampleHtmlPath,
       `<!doctype html><html><head><title>PS5 Pro | Shopee Malaysia</title></head><body>
       <h1>Mall 【11.11 SALE】 PS5 Playstation 5</h1>
-      <div><span>4.9</span> <span>5.7k Ratings</span> <div class="Ocv3B8"><span class="PfWbfd">10k+</span> Sold</div></div>
+      <div><div class="Ocv3B8"><span class="PfWbfd">10k+</span> Sold</div></div>
       <div class="nt0EaI"><div class="pyzxvq pw3J3G">RM3,666.00</div><p class="RKwYtD">After Voucher</p></div>
       <div>Installment 12x RM305.50</div>
       <section class="C21rQm">
@@ -305,7 +305,9 @@ async function run() {
         <div class="qIctnQ"><picture><img class="P39yUt" src="https://down-my.img.susercontent.com/file/my-11134207-820li-mvojwrl9o5q9d0"></picture></div>
         <div class="qIctnQ"><picture><img class="P39yUt" src="https://down-my.img.susercontent.com/file/my-11134207-820lc-mfdt3srigqhaf1"></picture></div>
         <div class="qIctnQ"><picture><img class="P39yUt" src="https://down-my.img.susercontent.com/file/my-11134207-7rash-m29ek9d67ifz59"></picture></div>
-      </section></body></html>`,
+      </section>
+      <div class="product-rating-overview__briefing"><div class="product-rating-overview__score-wrapper"><span class="product-rating-overview__rating-score">4.9</span><span class="product-rating-overview__rating-score-out-of"> out of 5 </span></div></div>
+      </body></html>`,
       'utf8'
     );
     const chromeExtractRun = spawnSync(
