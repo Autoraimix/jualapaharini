@@ -367,8 +367,31 @@ def download_images_via_context(context, image_urls, uploads_dir: Path, limit: i
     return saved_paths
 
 
+def safe_evaluate(page, script: str, retries: int = 6):
+    last_err = None
+    for _ in range(retries):
+        try:
+            return page.evaluate(script)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if (
+                "execution context was destroyed" in msg
+                or "cannot find context" in msg
+                or "most likely because of a navigation" in msg
+            ):
+                last_err = exc
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=8000)
+                except Exception:
+                    pass
+                time.sleep(0.6)
+                continue
+            raise
+    raise last_err
+
+
 def extract_from_page(page, context, uploads_dir: Path | None):
-    data = page.evaluate(EXTRACT_JS)
+    data = safe_evaluate(page, EXTRACT_JS)
     if data.get("blockedByGate"):
         return data
     raw_images = data.get("images") or []
@@ -396,17 +419,159 @@ def run_test_html(html_path: str):
         print(json.dumps(result, ensure_ascii=False))
 
 
+def process_url_queue(page, context, urls, delay_seconds: float, uploads_dir: Path | None):
+    for idx, url in enumerate(urls):
+        emit(
+            {
+                "event": "progress",
+                "index": idx,
+                "total": len(urls),
+                "url": url,
+                "stage": "opening",
+            }
+        )
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=35000)
+
+            # Wait across client-side shortlink / affiliate redirects (e.g. s.shopee.com.my -> opaanlp -> product)
+            hop_deadline = time.time() + 8.0
+            while time.time() < hop_deadline:
+                cur = (page.url or "").lower()
+                if (
+                    "s.shopee." not in cur
+                    and "/opaanlp/" not in cur
+                    and "universal-link" not in cur
+                ):
+                    break
+                time.sleep(0.4)
+
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=10000)
+            except Exception:
+                pass
+            time.sleep(0.8)
+
+            # Wait naturally for SPA price or sold text to render (up to ~18s), surviving extra redirects
+            deadline = time.time() + 18.0
+            snapshot = None
+            while time.time() < deadline:
+                snapshot = safe_evaluate(page, EXTRACT_JS)
+                if snapshot.get("blockedByGate"):
+                    break
+                if snapshot.get("price") is not None and (
+                    snapshot.get("images") or snapshot.get("soldCount") is not None
+                ):
+                    break
+                time.sleep(0.6)
+
+            if snapshot and snapshot.get("blockedByGate"):
+                emit(
+                    {
+                        "event": "paused_verification",
+                        "index": idx,
+                        "total": len(urls),
+                        "url": url,
+                        "reason": "Shopee/storefront showed a login or verification check in Chrome. Please sign in or complete the check manually in Chrome, then resume remaining links.",
+                    }
+                )
+                sys.exit(2)
+
+            # Smooth human-like scroll so lazy gallery images & ratings render cleanly
+            safe_evaluate(page, "() => window.scrollBy({ top: 240, behavior: 'smooth' })")
+            time.sleep(0.45)
+            safe_evaluate(page, "() => window.scrollBy({ top: 240, behavior: 'smooth' })")
+            time.sleep(0.45)
+            safe_evaluate(page, "() => window.scrollTo({ top: 0, behavior: 'smooth' })")
+            time.sleep(0.4)
+
+            extracted = extract_from_page(page, context, uploads_dir)
+            if extracted.get("blockedByGate"):
+                emit(
+                    {
+                        "event": "paused_verification",
+                        "index": idx,
+                        "total": len(urls),
+                        "url": url,
+                        "reason": "Verification or login prompt detected in Chrome. Please complete it manually in Chrome and resume.",
+                    }
+                )
+                sys.exit(2)
+
+            emit(
+                {
+                    "event": "result",
+                    "index": idx,
+                    "total": len(urls),
+                    "url": url,
+                    "platform": detect_platform(extracted.get("finalUrl") or url),
+                    "ok": True,
+                    "data": extracted,
+                }
+            )
+        except Exception as exc:
+            emit(
+                {
+                    "event": "result",
+                    "index": idx,
+                    "total": len(urls),
+                    "url": url,
+                    "platform": detect_platform(url),
+                    "ok": False,
+                    "error": str(exc),
+                }
+            )
+
+        # Polite human-paced pause before opening the next link
+        if idx < len(urls) - 1 and delay_seconds > 0:
+            jitter = delay_seconds * random.uniform(0.85, 1.25)
+            time.sleep(jitter)
+
+    emit({"event": "done", "processed": len(urls)})
+
+
 def run_cdp_batch(cdp_url: str, input_json_path: str):
     cfg = json.loads(Path(input_json_path).read_text(encoding="utf-8"))
     urls = [str(u).strip() for u in (cfg.get("urls") or []) if str(u).strip()]
     delay_seconds = float(cfg.get("delaySeconds", 5.0))
     uploads_dir = Path(cfg["uploadsDir"]) if cfg.get("uploadsDir") else None
+    headless = bool(cfg.get("headless", False))
+    profile_dir = cfg.get("profileDir")
 
     if not urls:
         emit({"event": "done", "processed": 0})
         return
 
     with sync_playwright() as p:
+        if headless:
+            if not profile_dir:
+                emit({"event": "error", "error": "Missing Chrome profileDir for headless mode."})
+                sys.exit(1)
+            Path(profile_dir).mkdir(parents=True, exist_ok=True)
+            chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+            launch_kwargs = {
+                "headless": True,
+                "viewport": {"width": 1440, "height": 900},
+                "args": ["--no-first-run"],
+            }
+            if Path(chrome_exe).exists():
+                launch_kwargs["executable_path"] = chrome_exe
+            try:
+                context = p.chromium.launch_persistent_context(profile_dir, **launch_kwargs)
+            except Exception as exc:
+                emit(
+                    {
+                        "event": "error",
+                        "error": f"Could not start Headless Chrome with saved profile (make sure visible Real Chrome window is closed first): {exc}",
+                    }
+                )
+                sys.exit(1)
+            try:
+                page = context.pages[0] if context.pages else context.new_page()
+                process_url_queue(page, context, urls, delay_seconds, uploads_dir)
+            finally:
+                context.close()
+            return
+
         try:
             browser = p.chromium.connect_over_cdp(cdp_url)
         except Exception as exc:
@@ -428,108 +593,7 @@ def run_cdp_batch(cdp_url: str, input_json_path: str):
             pg for pg in context.pages if not pg.url.startswith("chrome://") and not pg.url.startswith("devtools://")
         ]
         page = existing_pages[0] if existing_pages else context.new_page()
-
-        for idx, url in enumerate(urls):
-            emit(
-                {
-                    "event": "progress",
-                    "index": idx,
-                    "total": len(urls),
-                    "url": url,
-                    "stage": "opening",
-                }
-            )
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=35000)
-
-                # Wait naturally for SPA price or sold text to render (up to ~12s)
-                deadline = time.time() + 12.0
-                snapshot = None
-                while time.time() < deadline:
-                    snapshot = page.evaluate(EXTRACT_JS)
-                    if snapshot.get("blockedByGate"):
-                        break
-                    if snapshot.get("price") is not None and (
-                        snapshot.get("images") or snapshot.get("soldCount") is not None
-                    ):
-                        break
-                    time.sleep(0.5)
-
-                if snapshot and snapshot.get("blockedByGate"):
-                    emit(
-                        {
-                            "event": "paused_verification",
-                            "index": idx,
-                            "total": len(urls),
-                            "url": url,
-                            "reason": "Shopee/storefront showed a login or verification check in Chrome. Please sign in or complete the check manually in Chrome, then resume remaining links.",
-                        }
-                    )
-                    sys.exit(2)
-
-                # Smooth human-like scroll so lazy gallery images render cleanly
-                page.evaluate(
-                    """() => {
-                      window.scrollBy({ top: 240, behavior: 'smooth' });
-                    }"""
-                )
-                time.sleep(0.45)
-                page.evaluate(
-                    """() => {
-                      window.scrollBy({ top: 220, behavior: 'smooth' });
-                    }"""
-                )
-                time.sleep(0.45)
-                page.evaluate(
-                    """() => {
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }"""
-                )
-                time.sleep(0.4)
-
-                extracted = extract_from_page(page, context, uploads_dir)
-                if extracted.get("blockedByGate"):
-                    emit(
-                        {
-                            "event": "paused_verification",
-                            "index": idx,
-                            "total": len(urls),
-                            "url": url,
-                            "reason": "Verification or login prompt detected in Chrome. Please complete it manually in Chrome and resume.",
-                        }
-                    )
-                    sys.exit(2)
-
-                emit(
-                    {
-                        "event": "result",
-                        "index": idx,
-                        "total": len(urls),
-                        "url": url,
-                        "platform": detect_platform(extracted.get("finalUrl") or url),
-                        "ok": True,
-                        "data": extracted,
-                    }
-                )
-            except Exception as exc:
-                emit(
-                    {
-                        "event": "result",
-                        "index": idx,
-                        "total": len(urls),
-                        "url": url,
-                        "platform": detect_platform(url),
-                        "ok": False,
-                        "error": str(exc),
-                    }
-                )
-
-            # Polite human-paced pause before opening the next link
-            if idx < len(urls) - 1 and delay_seconds > 0:
-                jitter = delay_seconds * random.uniform(0.85, 1.25)
-                time.sleep(jitter)
-
-        emit({"event": "done", "processed": len(urls)})
+        process_url_queue(page, context, urls, delay_seconds, uploads_dir)
 
 
 def main():

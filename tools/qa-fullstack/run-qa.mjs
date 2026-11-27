@@ -331,6 +331,66 @@ async function run() {
       chromeExtractRun.stdout + chromeExtractRun.stderr
     );
 
+    // Test Headless mode + safe_evaluate surviving mid-load client JS redirect
+    const http = await import('node:http');
+    const redirectSrv = http.createServer((req, res) => {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      if (req.url === '/short') {
+        res.end('<html><body>Redirecting...<script>setTimeout(()=>location.replace("/pdp"), 120)</script></body></html>');
+      } else {
+        res.end('<html><head><title>QA Redirect Product | Shopee Malaysia</title></head><body><div class="nt0EaI"><div class="pyzxvq">RM199.00</div></div><div class="Ocv3B8"><span class="PfWbfd">2.5k+</span> Sold</div><span class="product-rating-overview__rating-score">4.8</span></body></html>');
+      }
+    });
+    await new Promise((r) => redirectSrv.listen(3098, '127.0.0.1', r));
+    const headlessJobPath = path.join(ROOT, 'data', 'qa_headless_job.json');
+    const qaHeadlessProfile = path.join(ROOT, 'data', 'qa_chrome_profile');
+    fs.writeFileSync(
+      headlessJobPath,
+      JSON.stringify({
+        urls: ['http://127.0.0.1:3098/short'],
+        delaySeconds: 0,
+        headless: true,
+        profileDir: qaHeadlessProfile,
+      }),
+      'utf8'
+    );
+    const headlessRun = await new Promise((resolve) => {
+      const child = spawn('python', ['tools/chrome_sync.py', '--input-json', headlessJobPath], {
+        cwd: ROOT,
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => (stdout += d.toString()));
+      child.stderr.on('data', (d) => (stderr += d.toString()));
+      child.on('close', (status) => resolve({ status, stdout, stderr }));
+    });
+    redirectSrv.close();
+    try {
+      fs.unlinkSync(headlessJobPath);
+      fs.rmSync(qaHeadlessProfile, { recursive: true, force: true });
+    } catch {}
+    const headlessLines = (headlessRun.stdout || '')
+      .trim()
+      .split(/\r?\n/)
+      .map((l) => {
+        try {
+          return JSON.parse(l);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    const headlessResult = headlessLines.find((e) => e.event === 'result');
+    assert(
+      headlessRun.status === 0 &&
+        headlessResult?.ok === true &&
+        headlessResult.data?.price === 199 &&
+        headlessResult.data?.soldCount === 2500 &&
+        headlessResult.data?.rating === 4.8,
+      'chrome_sync.py Headless mode survives client JS redirect without "Execution context was destroyed"',
+      headlessRun.stdout + headlessRun.stderr
+    );
+
     // Logout test
     const logoutRes = await fetch(`${BASE_URL}/api/admin/logout`, {
       method: 'POST',
@@ -424,6 +484,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(200)
     assert page.get_by_role("button", name="Open Real Chrome").is_visible(), "Open Real Chrome button must be visible"
     assert page.get_by_role("button", name="Start Bulk Chrome Sync").is_visible(), "Start Bulk Chrome Sync button must be visible"
+    assert page.get_by_text("Run in Headless Chrome").is_visible(), "Headless Chrome toggle option must be visible"
 
     # Check Change Password menu field order
     page.get_by_role("button", name="Change Password").click()

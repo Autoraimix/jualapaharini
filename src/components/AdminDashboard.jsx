@@ -151,6 +151,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   const [chromeUrlsText, setChromeUrlsText] = useState('');
   const [chromeCategory, setChromeCategory] = useState('tech');
   const [chromeDelaySec, setChromeDelaySec] = useState('4.5');
+  const [chromeHeadless, setChromeHeadless] = useState(false);
   const [chromeJob, setChromeJob] = useState(null);
 
   // Change Password menu fields (Username -> Current -> New -> Confirm)
@@ -798,6 +799,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
         urls: urlsPayload,
         categorySlug: chromeCategory,
         delaySeconds: Number(chromeDelaySec || 4.5),
+        headless: chromeHeadless,
       });
       setChromeJob(job);
       setStatusBanner({
@@ -1287,6 +1289,19 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                     )}
                   </div>
                 </div>
+
+                <label className="flex cursor-pointer items-center gap-2 rounded-2xl bg-[#FAF7F2] px-3.5 py-2.5 text-xs font-semibold text-[#1D1C1A]">
+                  <input
+                    type="checkbox"
+                    checked={chromeHeadless}
+                    onChange={(e) => setChromeHeadless(e.target.checked)}
+                    className="accent-[#F58C56]"
+                  />
+                  <span>
+                    Run in <span className="font-bold">Headless Chrome</span> (background mode, no
+                    visible window — close the open Real Chrome window first if connected)
+                  </span>
+                </label>
 
                 {chromeJob && (chromeJob.running || chromeJob.total > 0) && (
                   <div className="rounded-2xl border border-[#EFE9E0] bg-[#FAF7F2] p-3.5">

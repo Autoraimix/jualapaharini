@@ -1165,10 +1165,20 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Please paste at least 1 valid http/https product link.' });
   }
 
+  const headless = Boolean(req.body?.headless);
   const cdp = await getChromeCdpInfo();
-  if (!cdp.connected) {
+
+  if (headless) {
+    if (cdp.connected) {
+      return res.status(400).json({
+        error:
+          'Visible Real Chrome window is currently open on port 9222. Please close Chrome first to run in Headless mode, or switch off Headless mode to use your open Chrome window.',
+      });
+    }
+  } else if (!cdp.connected) {
     return res.status(400).json({
-      error: 'Real Chrome is not connected on port 9222 yet. Click "Open Real Chrome" first and wait for it to connect.',
+      error:
+        'Real Chrome is not connected on port 9222 yet. Click "Open Real Chrome" first (or enable Headless mode).',
     });
   }
 
@@ -1178,7 +1188,13 @@ app.post('/api/admin/chrome/sync-start', requireAdmin, async (req, res) => {
   const jobFile = path.join(os.tmpdir(), `hja_chrome_sync_${Date.now()}.json`);
   fs.writeFileSync(
     jobFile,
-    JSON.stringify({ urls: uniqueUrls, delaySeconds, uploadsDir: UPLOADS_DIR }),
+    JSON.stringify({
+      urls: uniqueUrls,
+      delaySeconds,
+      uploadsDir: UPLOADS_DIR,
+      headless,
+      profileDir: CHROME_PROFILE_DIR,
+    }),
     'utf8'
   );
 
