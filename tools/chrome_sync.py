@@ -419,7 +419,22 @@ def run_test_html(html_path: str):
         print(json.dumps(result, ensure_ascii=False))
 
 
-def process_url_queue(page, context, urls, delay_seconds: float, uploads_dir: Path | None):
+def format_gate_reason(headless: bool, final_url: str) -> str:
+    short_dest = (final_url or "")[:90]
+    if headless:
+        return (
+            f"Headless Chrome ran invisibly in the background and storefront requested login/verification ({short_dest}). "
+            "Uncheck 'Run in Headless Chrome', click 'Open Real Chrome' to sign in visibly, then try again."
+        )
+    return (
+        f"Shopee/storefront showed a login or verification check in the Real Chrome window ({short_dest}). "
+        "Complete the check or sign in inside that Real Chrome tab, then click Resume Remaining."
+    )
+
+
+def process_url_queue(
+    page, context, urls, delay_seconds: float, uploads_dir: Path | None, headless: bool = False
+):
     for idx, url in enumerate(urls):
         emit(
             {
@@ -431,6 +446,12 @@ def process_url_queue(page, context, urls, delay_seconds: float, uploads_dir: Pa
             }
         )
         try:
+            if not headless:
+                try:
+                    page.bring_to_front()
+                except Exception:
+                    pass
+
             page.goto(url, wait_until="domcontentloaded", timeout=35000)
 
             # Wait across client-side shortlink / affiliate redirects (e.g. s.shopee.com.my -> opaanlp -> product)
@@ -449,29 +470,36 @@ def process_url_queue(page, context, urls, delay_seconds: float, uploads_dir: Pa
                 page.wait_for_load_state("domcontentloaded", timeout=10000)
             except Exception:
                 pass
-            time.sleep(0.8)
+            time.sleep(1.0)
 
             # Wait naturally for SPA price or sold text to render (up to ~18s), surviving extra redirects
-            deadline = time.time() + 18.0
+            start_wait = time.time()
+            deadline = start_wait + 18.0
             snapshot = None
             while time.time() < deadline:
                 snapshot = safe_evaluate(page, EXTRACT_JS)
-                if snapshot.get("blockedByGate"):
-                    break
                 if snapshot.get("price") is not None and (
                     snapshot.get("images") or snapshot.get("soldCount") is not None
                 ):
                     break
+                # Give SPA hydration at least 2.5s before treating a banner/login check as final
+                if snapshot.get("blockedByGate") and (time.time() - start_wait) >= 2.5:
+                    break
                 time.sleep(0.6)
 
             if snapshot and snapshot.get("blockedByGate"):
+                if not headless:
+                    try:
+                        page.bring_to_front()
+                    except Exception:
+                        pass
                 emit(
                     {
                         "event": "paused_verification",
                         "index": idx,
                         "total": len(urls),
                         "url": url,
-                        "reason": "Shopee/storefront showed a login or verification check in Chrome. Please sign in or complete the check manually in Chrome, then resume remaining links.",
+                        "reason": format_gate_reason(headless, snapshot.get("finalUrl") or page.url),
                     }
                 )
                 sys.exit(2)
@@ -486,13 +514,18 @@ def process_url_queue(page, context, urls, delay_seconds: float, uploads_dir: Pa
 
             extracted = extract_from_page(page, context, uploads_dir)
             if extracted.get("blockedByGate"):
+                if not headless:
+                    try:
+                        page.bring_to_front()
+                    except Exception:
+                        pass
                 emit(
                     {
                         "event": "paused_verification",
                         "index": idx,
                         "total": len(urls),
                         "url": url,
-                        "reason": "Verification or login prompt detected in Chrome. Please complete it manually in Chrome and resume.",
+                        "reason": format_gate_reason(headless, extracted.get("finalUrl") or page.url),
                     }
                 )
                 sys.exit(2)
@@ -567,7 +600,7 @@ def run_cdp_batch(cdp_url: str, input_json_path: str):
                 sys.exit(1)
             try:
                 page = context.pages[0] if context.pages else context.new_page()
-                process_url_queue(page, context, urls, delay_seconds, uploads_dir)
+                process_url_queue(page, context, urls, delay_seconds, uploads_dir, headless=True)
             finally:
                 context.close()
             return
@@ -587,13 +620,15 @@ def run_cdp_batch(cdp_url: str, input_json_path: str):
             emit({"event": "error", "error": "No open browser context found in Chrome."})
             sys.exit(1)
 
-        # Reuse the real persistent Chrome context (non-incognito)
+        # Reuse the real persistent Chrome context (non-incognito) and open a dedicated visible tab
+        # so we never overwrite the user's /admin tab or existing tabs
         context = browser.contexts[0]
-        existing_pages = [
-            pg for pg in context.pages if not pg.url.startswith("chrome://") and not pg.url.startswith("devtools://")
-        ]
-        page = existing_pages[0] if existing_pages else context.new_page()
-        process_url_queue(page, context, urls, delay_seconds, uploads_dir)
+        page = context.new_page()
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+        process_url_queue(page, context, urls, delay_seconds, uploads_dir, headless=False)
 
 
 def main():
