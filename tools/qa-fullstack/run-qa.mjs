@@ -532,6 +532,27 @@ with sync_playwright() as p:
     broken_imgs = page.evaluate("Array.from(document.querySelectorAll('img')).filter(i => i.complete && i.naturalWidth === 0).length")
     assert broken_imgs == 0, f"Found {broken_imgs} broken images on PC Home"
 
+    # Category carousel scroll arrows + View All toggle + Smart Search Category filter
+    assert page.get_by_role("button", name="Scroll categories right").is_enabled(), "Categories right scroll arrow must be enabled"
+    page.get_by_role("button", name="Scroll categories right").click()
+    page.wait_for_timeout(350)
+    assert page.get_by_role("button", name="Scroll categories left").is_enabled(), "Categories left scroll arrow must enable after scrolling right"
+    page.get_by_role("button", name="View All").click()
+    page.wait_for_timeout(150)
+    assert page.get_by_role("button", name="Gifts & Festive").is_visible(), "All 31 categories including last item must show in View All"
+    page.get_by_role("button", name="Slider View").click()
+    page.wait_for_timeout(150)
+    page.get_by_role("button", name="Open smart filters").click()
+    page.wait_for_timeout(150)
+    assert page.get_by_role("button", name="Select category").is_visible(), "Smart Search modal must include Category selector"
+    page.get_by_role("button", name="Select category").click()
+    page.wait_for_timeout(100)
+    assert page.get_by_role("listbox", name="Category options").get_by_text("All Categories").is_visible(), "Smart Search category dropdown must include All Categories"
+    page.keyboard.press("Escape")
+    page.keyboard.press("Escape")
+    page.locator(".fixed.inset-0").first.click(position={"x": 5, "y": 5})
+    page.wait_for_timeout(150)
+
     # Bell notification panel shows live admin updates without mentioning Shopee/TikTok
     assert page.get_by_label("Unread updates").is_visible(), "Unread notification dot must appear when admin updates exist"
     page.get_by_role("button", name="Store updates").click()

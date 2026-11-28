@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { LayoutGrid, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { CategoryDropdown } from './CategoryDropdown';
 
 const SMART_PRESETS = [
   'earbuds under 80',
@@ -13,6 +14,8 @@ const SMART_PRESETS = [
 
 export function SmartSearchModal({
   query,
+  category = 'all',
+  categories = [],
   minPrice,
   maxPrice,
   verifiedOnly,
@@ -21,6 +24,7 @@ export function SmartSearchModal({
   onClose,
 }) {
   const [draftQuery, setDraftQuery] = useState(query);
+  const [draftCategory, setDraftCategory] = useState(category || 'all');
   const [draftMin, setDraftMin] = useState(minPrice);
   const [draftMax, setDraftMax] = useState(maxPrice);
   const [draftVerified, setDraftVerified] = useState(verifiedOnly);
@@ -30,6 +34,7 @@ export function SmartSearchModal({
     e.preventDefault();
     onApply({
       query: draftQuery,
+      category: draftCategory,
       minPrice: draftMin,
       maxPrice: draftMax,
       verifiedOnly: draftVerified,
@@ -40,6 +45,7 @@ export function SmartSearchModal({
 
   function handleReset() {
     setDraftQuery('');
+    setDraftCategory('all');
     setDraftMin('');
     setDraftMax('');
     setDraftVerified(false);
@@ -52,7 +58,7 @@ export function SmartSearchModal({
       onClick={onClose}
     >
       <div
-        className="animate-sheet-up w-full max-w-lg rounded-t-[32px] bg-[#FAF7F2] p-5 pb-7 shadow-2xl sm:rounded-[32px] sm:p-6"
+        className="animate-sheet-up max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-[32px] bg-[#FAF7F2] p-5 pb-7 shadow-2xl sm:rounded-[32px] sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -118,6 +124,23 @@ export function SmartSearchModal({
               ))}
             </div>
           </div>
+
+          {/* Category Filter (Searchable & Scrollable) */}
+          {categories.length > 0 && (
+            <div className="rounded-[24px] bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-[#1D1C1A]">
+                <LayoutGrid className="h-3.5 w-3.5 text-[#F58C56]" />
+                Category
+              </div>
+              <CategoryDropdown
+                categories={categories}
+                value={draftCategory}
+                onChange={setDraftCategory}
+                includeAll={true}
+                allLabel="All Categories"
+              />
+            </div>
+          )}
 
           {/* Price Range */}
           <div className="rounded-[24px] bg-white p-4 shadow-sm">

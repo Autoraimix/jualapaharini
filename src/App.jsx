@@ -1,8 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Home,
+  LayoutGrid,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -108,6 +111,31 @@ export default function App() {
 
   // PWA install prompt
   const [installPrompt, setInstallPrompt] = useState(null);
+
+  // Category slider state (desktop arrow controls + drag-to-scroll + Show All toggle)
+  const catScrollRef = useRef(null);
+  const catDragRef = useRef({ down: false, startX: 0, scrollLeft: 0, dragged: false });
+  const [canScrollCats, setCanScrollCats] = useState({ left: false, right: false });
+  const [showAllCategories, setShowAllCategories] = useState(false);
+
+  const updateCatScrollButtons = useCallback(() => {
+    const el = catScrollRef.current;
+    if (!el) return;
+    setCanScrollCats({
+      left: el.scrollLeft > 6,
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 6,
+    });
+  }, []);
+
+  useEffect(() => {
+    updateCatScrollButtons();
+    window.addEventListener('resize', updateCatScrollButtons);
+    return () => window.removeEventListener('resize', updateCatScrollButtons);
+  }, [categories, showAllCategories, updateCatScrollButtons]);
+
+  function scrollCategoriesBy(delta) {
+    catScrollRef.current?.scrollBy({ left: delta, behavior: 'smooth' });
+  }
 
   // Favorites
   const [favorites, setFavorites] = useState(() => {
@@ -548,7 +576,11 @@ export default function App() {
                 onClick={() => setShowSmartModal(true)}
                 aria-label="Open smart filters"
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full shadow-[0_6px_20px_rgba(32,24,16,0.06)] transition ${
-                  minPrice || maxPrice || verifiedOnly || platformFilter !== 'all'
+                  minPrice ||
+                  maxPrice ||
+                  verifiedOnly ||
+                  platformFilter !== 'all' ||
+                  selectedCategory !== 'all'
                     ? 'bg-[#F58C56] text-white'
                     : 'bg-white text-[#1D1C1A]'
                 }`}
@@ -557,45 +589,182 @@ export default function App() {
               </button>
             </div>
 
-            {/* Category Icon Carousel (matching screenshot top category tiles) */}
-            <div className="no-scrollbar -mx-1.5 flex gap-3 overflow-x-auto px-1.5 py-1.5">
-              {categories.map((cat) => {
-                const active = selectedCategory === cat.slug;
-                const iconSrc = CATEGORY_IMAGES[cat.slug];
-                return (
-                  <button
-                    key={cat.slug}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat.slug)}
-                    className="flex shrink-0 flex-col items-center gap-1.5"
-                  >
-                    <div
-                      className={`flex h-15 w-15 items-center justify-center overflow-hidden rounded-[20px] bg-white p-1.5 transition ${
-                        active
-                          ? 'border-2 border-[#F58C56] shadow-[0_6px_16px_rgba(245,140,86,0.22)]'
-                          : 'border-2 border-transparent shadow-[0_4px_14px_rgba(32,24,16,0.05)] hover:bg-[#FAF7F2]'
-                      }`}
-                    >
-                      {iconSrc ? (
-                        <img
-                          src={iconSrc}
-                          alt={cat.name}
-                          className="h-full w-full rounded-[14px] object-contain"
-                        />
-                      ) : (
-                        <span className="text-2xl">{cat.emoji}</span>
-                      )}
+            {/* Category Icon Carousel + Scroll Arrows + Expand All Grid Toggle */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-[#6E655D]">
+                    Categories
+                  </span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#8C837A] shadow-sm">
+                    {categories.length}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {!showAllCategories && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => scrollCategoriesBy(-300)}
+                        disabled={!canScrollCats.left}
+                        aria-label="Scroll categories left"
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-[#1D1C1A] shadow-sm transition hover:bg-[#FFF0E6] disabled:opacity-35"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => scrollCategoriesBy(300)}
+                        disabled={!canScrollCats.right}
+                        aria-label="Scroll categories right"
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-[#1D1C1A] shadow-sm transition hover:bg-[#FFF0E6] disabled:opacity-35"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
                     </div>
-                    <span
-                      className={`max-w-[74px] text-center text-[11px] font-bold leading-tight ${
-                        active ? 'text-[#E26D32]' : 'text-[#6E655D]'
-                      }`}
-                    >
-                      {cat.name}
-                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowAllCategories((v) => !v)}
+                    className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#6E655D] shadow-sm transition hover:bg-[#FFF0E6] hover:text-[#C85A21]"
+                  >
+                    <LayoutGrid className="h-3 w-3" />
+                    {showAllCategories ? 'Slider View' : 'View All'}
                   </button>
-                );
-              })}
+                </div>
+              </div>
+
+              {showAllCategories ? (
+                <div className="grid grid-cols-4 gap-2.5 rounded-[24px] bg-white/70 p-3 shadow-sm sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10">
+                  {categories.map((cat) => {
+                    const active = selectedCategory === cat.slug;
+                    const iconSrc = CATEGORY_IMAGES[cat.slug];
+                    return (
+                      <button
+                        key={cat.slug}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCategory(cat.slug);
+                          setShowAllCategories(false);
+                        }}
+                        className="flex flex-col items-center gap-1.5"
+                      >
+                        <div
+                          className={`flex h-14 w-14 items-center justify-center overflow-hidden rounded-[18px] bg-white p-1.5 transition ${
+                            active
+                              ? 'border-2 border-[#F58C56] shadow-[0_6px_16px_rgba(245,140,86,0.22)]'
+                              : 'border-2 border-transparent shadow-[0_4px_14px_rgba(32,24,16,0.05)] hover:bg-[#FAF7F2]'
+                          }`}
+                        >
+                          {iconSrc ? (
+                            <img
+                              src={iconSrc}
+                              alt={cat.name}
+                              className="h-full w-full rounded-[12px] object-contain"
+                            />
+                          ) : (
+                            <span className="text-xl">{cat.emoji}</span>
+                          )}
+                        </div>
+                        <span
+                          className={`max-w-[72px] text-center text-[10px] font-bold leading-tight ${
+                            active ? 'text-[#E26D32]' : 'text-[#6E655D]'
+                          }`}
+                        >
+                          {cat.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="relative">
+                  <div
+                    ref={catScrollRef}
+                    onScroll={updateCatScrollButtons}
+                    onWheel={(e) => {
+                      const el = catScrollRef.current;
+                      if (!el || el.scrollWidth <= el.clientWidth) return;
+                      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                        el.scrollLeft += e.deltaY;
+                      }
+                    }}
+                    onMouseDown={(e) => {
+                      const el = catScrollRef.current;
+                      if (!el) return;
+                      catDragRef.current = {
+                        down: true,
+                        startX: e.pageX,
+                        scrollLeft: el.scrollLeft,
+                        dragged: false,
+                      };
+                    }}
+                    onMouseMove={(e) => {
+                      const st = catDragRef.current;
+                      const el = catScrollRef.current;
+                      if (!st.down || !el) return;
+                      const dx = e.pageX - st.startX;
+                      if (Math.abs(dx) > 6) st.dragged = true;
+                      if (st.dragged) {
+                        el.scrollLeft = st.scrollLeft - dx;
+                      }
+                    }}
+                    onMouseUp={() => {
+                      setTimeout(() => {
+                        catDragRef.current.down = false;
+                        catDragRef.current.dragged = false;
+                      }, 0);
+                    }}
+                    onMouseLeave={() => {
+                      catDragRef.current.down = false;
+                    }}
+                    className="no-scrollbar flex cursor-grab touch-pan-x select-none gap-3 overflow-x-auto px-1 py-1.5 pr-6 active:cursor-grabbing"
+                  >
+                    {categories.map((cat) => {
+                      const active = selectedCategory === cat.slug;
+                      const iconSrc = CATEGORY_IMAGES[cat.slug];
+                      return (
+                        <button
+                          key={cat.slug}
+                          type="button"
+                          onClick={() => {
+                            if (catDragRef.current.dragged) return;
+                            setSelectedCategory(cat.slug);
+                          }}
+                          className="flex shrink-0 flex-col items-center gap-1.5"
+                        >
+                          <div
+                            className={`flex h-15 w-15 items-center justify-center overflow-hidden rounded-[20px] bg-white p-1.5 transition ${
+                              active
+                                ? 'border-2 border-[#F58C56] shadow-[0_6px_16px_rgba(245,140,86,0.22)]'
+                                : 'border-2 border-transparent shadow-[0_4px_14px_rgba(32,24,16,0.05)] hover:bg-[#FAF7F2]'
+                            }`}
+                          >
+                            {iconSrc ? (
+                              <img
+                                src={iconSrc}
+                                alt={cat.name}
+                                draggable={false}
+                                className="h-full w-full rounded-[14px] object-contain"
+                              />
+                            ) : (
+                              <span className="text-2xl">{cat.emoji}</span>
+                            )}
+                          </div>
+                          <span
+                            className={`max-w-[74px] text-center text-[11px] font-bold leading-tight ${
+                              active ? 'text-[#E26D32]' : 'text-[#6E655D]'
+                            }`}
+                          >
+                            {cat.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Section Title + Orange Count Pill + See All (matching "Trending Recipes [8] See All") */}
@@ -873,6 +1042,8 @@ export default function App() {
       {showSmartModal && (
         <SmartSearchModal
           query={searchInput}
+          category={selectedCategory}
+          categories={categories}
           minPrice={minPrice}
           maxPrice={maxPrice}
           verifiedOnly={verifiedOnly}
@@ -880,6 +1051,7 @@ export default function App() {
           onApply={(next) => {
             setSearchInput(next.query);
             setDebouncedQuery(next.query.trim());
+            setSelectedCategory(next.category || 'all');
             setMinPrice(next.minPrice);
             setMaxPrice(next.maxPrice);
             setVerifiedOnly(next.verifiedOnly);

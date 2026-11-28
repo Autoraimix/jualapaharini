@@ -2,15 +2,30 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { filterCategoriesSmart } from '../utils/autoTags';
 
-export function CategoryDropdown({ categories = [], value, onChange }) {
+export function CategoryDropdown({
+  categories = [],
+  value,
+  onChange,
+  includeAll = false,
+  allLabel = 'All Categories',
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const containerRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  const allCategories = categories.filter((c) => c.slug !== 'all');
+  const nonAllCategories = categories.filter((c) => c.slug !== 'all');
+  const allCategories = includeAll
+    ? [{ slug: 'all', name: allLabel }, ...nonAllCategories]
+    : nonAllCategories;
   const selectedCategory = allCategories.find((c) => c.slug === value) || allCategories[0];
-  const filtered = filterCategoriesSmart(categories, query);
+  const filteredNonAll = filterCategoriesSmart(categories, query);
+  const qLower = query.trim().toLowerCase();
+  const showAllOption =
+    includeAll && (!qLower || 'all categories semua'.includes(qLower));
+  const filtered = showAllOption
+    ? [{ slug: 'all', name: allLabel }, ...filteredNonAll]
+    : filteredNonAll;
 
   useEffect(() => {
     if (!open) return;
