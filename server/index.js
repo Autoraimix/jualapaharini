@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,10 +9,17 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import cron from 'node-cron';
 import db, { hashPassword, verifyPassword } from './db.js';
 import { seedIfEmpty } from './seed.js';
 import { fetchProductMetadata } from './priceFetcher.js';
 import { queryProducts } from './search.js';
+import { createMarketingRouter } from './routes/marketing.js';
+import { generateSmartSearchTags, parseTagList } from '../src/utils/autoTags.js';
+import { processThreadsQueue } from './ai/threadsQueue.js';
+import { processReplyQueue } from './ai/threadsReplies.js';
+import { generateDailyAutoPosts } from './ai/autoPost.js';
+import { startTokenRefreshSchedule, checkAndRefreshExpiringTokens } from './ai/threadsToken.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,10 +35,9 @@ seedIfEmpty({ force: false });
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
 const PRICE_SYNC_TTL_MINUTES = Number(process.env.PRICE_SYNC_TTL_MINUTES || 360);
-const ADMIN_IDLE_TIMEOUT_MS = Number(process.env.ADMIN_IDLE_TIMEOUT_MINUTES || 10) * 60 * 1000;
 
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '75mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 const upload = multer({
@@ -46,30 +52,6 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-function getWindowsPcIdleMs() {
-  if (process.platform !== 'win32') return null;
-  try {
-    const py = [
-      'import ctypes',
-      'class LII(ctypes.Structure):',
-      "    _fields_=[('cbSize',ctypes.c_uint),('dwTime',ctypes.c_uint)]",
-      'lii=LII()',
-      'lii.cbSize=ctypes.sizeof(LII)',
-      'ok=ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii))',
-      'tick=ctypes.windll.kernel32.GetTickCount64() & 0xFFFFFFFF',
-      'print(((tick - lii.dwTime) & 0xFFFFFFFF) if ok else -1)',
-    ].join('\n');
-    const out = spawnSync('python', ['-c', py], { encoding: 'utf8', timeout: 2000 });
-    if (out.status === 0) {
-      const ms = Number.parseInt((out.stdout || '').trim(), 10);
-      if (Number.isFinite(ms) && ms >= 0) return ms;
-    }
-  } catch {
-    // Fallback to API-only activity tracking
-  }
-  return null;
-}
-
 function requireAdmin(req, res, next) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -77,44 +59,14 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ error: 'Admin authentication required.', code: 'AUTH_REQUIRED' });
   }
   const session = db
-    .prepare('SELECT token, username, last_activity_at FROM admin_sessions WHERE token = ?')
+    .prepare('SELECT token, username FROM admin_sessions WHERE token = ?')
     .get(token);
 
   if (!session) {
     return res.status(401).json({ error: 'Admin authentication required.', code: 'AUTH_REQUIRED' });
   }
 
-  const now = Date.now();
-  const isPassiveCheck = req.path === '/api/admin/verify' && req.query?.passive === '1';
-
-  if (now - session.last_activity_at > ADMIN_IDLE_TIMEOUT_MS) {
-    // Keep session alive while Real Chrome Bulk Sync is running or Windows PC was touched within timeout
-    let activeRecently = Boolean(chromeSyncJob?.running);
-    let nextRecordedActivity = now;
-
-    if (!activeRecently && ADMIN_IDLE_TIMEOUT_MS >= 15000) {
-      const pcIdleMs = getWindowsPcIdleMs();
-      if (pcIdleMs !== null && pcIdleMs < ADMIN_IDLE_TIMEOUT_MS) {
-        activeRecently = true;
-        nextRecordedActivity = now - pcIdleMs;
-      }
-    }
-
-    if (activeRecently) {
-      db.prepare('UPDATE admin_sessions SET last_activity_at = ? WHERE token = ?').run(
-        nextRecordedActivity,
-        token
-      );
-    } else {
-      db.prepare('DELETE FROM admin_sessions WHERE token = ?').run(token);
-      return res.status(401).json({
-        error: 'Session expired after 10 minutes of inactivity. Please sign in again.',
-        code: 'SESSION_EXPIRED',
-      });
-    }
-  } else if (!isPassiveCheck) {
-    db.prepare('UPDATE admin_sessions SET last_activity_at = ? WHERE token = ?').run(now, token);
-  }
+  db.prepare('UPDATE admin_sessions SET last_activity_at = ? WHERE token = ?').run(Date.now(), token);
 
   req.adminUser = session.username;
   req.adminToken = token;
@@ -247,12 +199,28 @@ function sanitizeProductInput(body, existing = null, fallbackCode = null) {
     body.reliability_score ?? existing?.reliability_score ?? 4.8
   );
 
+  const cleanTitle = String(body.title ?? existing?.title ?? '').trim();
+  const cleanDescription = String(body.description ?? existing?.description ?? '').trim();
+  const cleanCategorySlug =
+    String(body.category_slug ?? existing?.category_slug ?? 'tech').trim() || 'tech';
+  const rawTags = String(body.tags ?? existing?.tags ?? '').trim();
+  const finalTags =
+    parseTagList(rawTags).length >= 5
+      ? rawTags
+      : generateSmartSearchTags({
+          title: cleanTitle,
+          description: cleanDescription,
+          categorySlug: cleanCategorySlug,
+          existingTags: rawTags,
+          minTags: 5,
+        });
+
   return {
     code: String(body.code || existing?.code || fallbackCode || getNextProductCode()).trim(),
-    title: String(body.title ?? existing?.title ?? '').trim(),
-    description: String(body.description ?? existing?.description ?? '').trim(),
-    category_slug: String(body.category_slug ?? existing?.category_slug ?? 'tech').trim() || 'tech',
-    tags: String(body.tags ?? existing?.tags ?? '').trim(),
+    title: cleanTitle,
+    description: cleanDescription,
+    category_slug: cleanCategorySlug,
+    tags: finalTags,
     image_url: String(body.image_url ?? existing?.image_url ?? '').trim(),
     gallery_images: (() => {
       const raw = body.gallery_images ?? existing?.gallery_images ?? '[]';
@@ -543,10 +511,6 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
 });
 
 app.get('/api/admin/verify', requireAdmin, (req, res) => {
-  res.json({ ok: true, username: req.adminUser });
-});
-
-app.post('/api/admin/keepalive', requireAdmin, (req, res) => {
   res.json({ ok: true, username: req.adminUser });
 });
 
@@ -1627,15 +1591,52 @@ app.post('/api/admin/chrome/extract-one', requireAdmin, async (req, res) => {
   }
 });
 
+app.use('/api', createMarketingRouter({ requireAdmin, uploadsDir: UPLOADS_DIR }));
+
 // Serve built PWA frontend in production
 if (fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
-  app.use(express.static(DIST_DIR));
+  app.use(
+    express.static(DIST_DIR, {
+      setHeaders: (res, filePath) => {
+        if (
+          filePath.endsWith('index.html') ||
+          filePath.endsWith('sw.js') ||
+          filePath.endsWith('registerSW.js') ||
+          filePath.endsWith('manifest.webmanifest')
+        ) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+      },
+    })
+  );
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(DIST_DIR, 'index.html'));
   });
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`BeliApaHarini API running on http://localhost:${PORT}`);
+  startTokenRefreshSchedule();
+
+  // Hourly scheduled posts queue
+  cron.schedule('0 * * * *', () => {
+    processThreadsQueue().catch((err) => console.error('[cron] processThreadsQueue error:', err));
+  });
+
+  // Reply queue every 10 minutes
+  cron.schedule('*/10 * * * *', () => {
+    processReplyQueue().catch((err) => console.error('[cron] processReplyQueue error:', err));
+  });
+
+  // Daily auto-post generator at 00:00
+  cron.schedule('0 0 * * *', () => {
+    generateDailyAutoPosts().catch((err) => console.error('[cron] generateDailyAutoPosts error:', err));
+  });
+
+  // Daily expiring token check at 08:00
+  cron.schedule('0 8 * * *', () => {
+    checkAndRefreshExpiringTokens().catch((err) => console.error('[cron] checkAndRefreshExpiringTokens error:', err));
+  });
 });

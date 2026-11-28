@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorOC" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="tentSage" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#CFE3D8"/>
+      <stop offset="60%" stop-color="#98BCAE"/>
+      <stop offset="100%" stop-color="#769E8E"/>
+    </linearGradient>
+    <linearGradient id="coralOC" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="196" rx="84" ry="15" fill="url(#floorOC)"/>
+  <path d="M44 182 L116 68 C122 58 134 58 140 68 L212 182 Z" fill="url(#tentSage)"/>
+  <path d="M100 182 L128 112 L156 182 Z" fill="#1E1D1B"/>
+  <path d="M44 182 L128 62 L148 182" fill="none" stroke="url(#coralOC)" stroke-width="8" stroke-linejoin="round"/>
+  <circle cx="182" cy="76" r="16" fill="url(#coralOC)"/>
+</svg>

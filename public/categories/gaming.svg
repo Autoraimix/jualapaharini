@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorGM" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="padBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="55%" stop-color="#F3E5D4"/>
+      <stop offset="100%" stop-color="#DAC6B0"/>
+    </linearGradient>
+    <linearGradient id="coralGM" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="194" rx="80" ry="15" fill="url(#floorGM)"/>
+  <path d="M64 90 C78 82 178 82 192 90 C212 102 218 158 202 176 C190 188 172 178 160 156 L96 156 C84 178 66 188 54 176 C38 158 44 102 64 90 Z" fill="url(#padBody)"/>
+  <rect x="74" y="110" width="28" height="10" rx="5" fill="#7EA694"/>
+  <rect x="83" y="101" width="10" height="28" rx="5" fill="#7EA694"/>
+  <circle cx="164" cy="106" r="7" fill="url(#coralGM)"/>
+  <circle cx="178" cy="120" r="7" fill="#1E1D1B"/>
+  <circle cx="150" cy="120" r="7" fill="#98BCAE"/>
+  <circle cx="164" cy="134" r="7" fill="url(#coralGM)"/>
+  <circle cx="108" cy="138" r="11" fill="#3B3733"/>
+  <circle cx="148" cy="138" r="11" fill="#3B3733"/>
+</svg>

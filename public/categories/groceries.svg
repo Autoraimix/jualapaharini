@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorGR" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bagGR" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="55%" stop-color="#F3E4D1"/>
+      <stop offset="100%" stop-color="#DEC7AE"/>
+    </linearGradient>
+    <linearGradient id="coralGR" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="204" rx="74" ry="15" fill="url(#floorGR)"/>
+  <ellipse cx="100" cy="84" rx="22" ry="30" fill="#98BCAE"/>
+  <circle cx="152" cy="88" r="24" fill="url(#coralGR)"/>
+  <rect x="120" y="64" width="24" height="44" rx="10" fill="#7EA694"/>
+  <path d="M64 96 L192 96 L184 186 C183 194 176 198 166 198 L90 198 C80 198 73 194 72 186 Z" fill="url(#bagGR)"/>
+  <path d="M104 128 C104 148 152 148 152 128" fill="none" stroke="url(#coralGR)" stroke-width="8" stroke-linecap="round"/>
+</svg>

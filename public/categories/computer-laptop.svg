@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorCL" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="lidCL" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#48443F"/>
+      <stop offset="100%" stop-color="#1E1D1B"/>
+    </linearGradient>
+    <linearGradient id="baseCL" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="55%" stop-color="#EFE2D3"/>
+      <stop offset="100%" stop-color="#D4C1AC"/>
+    </linearGradient>
+    <linearGradient id="coralCL" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="196" rx="84" ry="15" fill="url(#floorCL)"/>
+  <rect x="52" y="62" width="152" height="104" rx="14" fill="url(#lidCL)"/>
+  <rect x="61" y="71" width="134" height="86" rx="8" fill="#FAF3EA"/>
+  <rect x="72" y="84" width="66" height="44" rx="8" fill="url(#coralCL)"/>
+  <rect x="146" y="84" width="38" height="24" rx="6" fill="#98BCAE"/>
+  <rect x="146" y="114" width="38" height="14" rx="5" fill="#DFCEBA"/>
+  <path d="M36 168 L220 168 L210 184 C208 188 202 190 194 190 L62 190 C54 190 48 188 46 184 Z" fill="url(#baseCL)"/>
+  <rect x="108" y="172" width="40" height="6" rx="3" fill="#C9B7A2"/>
+</svg>

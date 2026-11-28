@@ -71,34 +71,44 @@ EXTRACT_JS = r"""
     if (ldProduct) break;
   }
 
-  // 2. Price Extraction (Shopee .nt0EaI / .pyzxvq first, then resilient PDP heuristics)
-  const parsePriceNumber = (text) => {
+  // 2. Price Extraction (Shopee .nt0EaI / .pyzxvq + Lazada v2 separate sign/amount spans + resilient PDP heuristics)
+  const parsePriceNumber = (text, allowBareNumber = false) => {
     if (!text) return null;
     // Ignore installment snippets like "12x RM305.50"
     const scrubbed = text.replace(/\d+\s*x\s*(?:RM|MYR|¥|￥)?\s*[\d,]+(?:\.\d{1,2})?/gi, ' ');
     const m = scrubbed.match(/(?:RM|MYR|¥|￥)\s*([\d,]+(?:\.\d{1,2})?)/i);
-    if (!m) return null;
-    const num = Number(m[1].replace(/,/g, ''));
-    return Number.isFinite(num) && num > 0 && num < 500000 ? Number(num.toFixed(2)) : null;
+    if (m) {
+      const num = Number(m[1].replace(/,/g, ''));
+      return Number.isFinite(num) && num > 0 && num < 500000 ? Number(num.toFixed(2)) : null;
+    }
+    if (allowBareNumber) {
+      const bare = scrubbed.match(/\b([\d,]+\.\d{1,2})\b/) || scrubbed.match(/\b([\d,]{1,6})\b/);
+      if (bare) {
+        const num = Number(bare[1].replace(/,/g, ''));
+        return Number.isFinite(num) && num > 0 && num < 500000 ? Number(num.toFixed(2)) : null;
+      }
+    }
+    return null;
   };
 
   let price = null;
   const priceSelectors = [
-    '.nt0EaI .pyzxvq',
-    '.pyzxvq.pw3J3G',
-    '.nt0EaI',
-    '[class*="product-briefing"] .pyzxvq',
-    '.pqTWkA',
-    '.pdp-v2-product-price-content-salePrice-amount',
-    '.pdp-v2-product-price-content-salePrice',
-    '.pdp-price_color_orange',
-    '.pdp-price',
+    { sel: '.nt0EaI .pyzxvq', bare: false },
+    { sel: '.pyzxvq.pw3J3G', bare: false },
+    { sel: '.nt0EaI', bare: false },
+    { sel: '[class*="product-briefing"] .pyzxvq', bare: false },
+    { sel: '.pqTWkA', bare: false },
+    { sel: '.pdp-v2-product-price-content-salePrice', bare: true },
+    { sel: '.pdp-v2-product-price-content-salePrice-amount', bare: true },
+    { sel: '.pdp-mod-product-price-v2 [class*="salePrice"]', bare: true },
+    { sel: '.pdp-price_color_orange', bare: true },
+    { sel: '.pdp-price', bare: true },
   ];
 
-  for (const sel of priceSelectors) {
+  for (const { sel, bare } of priceSelectors) {
     for (const el of document.querySelectorAll(sel)) {
       const txt = cleanText(el.innerText || el.textContent);
-      const val = parsePriceNumber(txt);
+      const val = parsePriceNumber(txt, bare);
       if (val !== null) {
         price = val;
         break;
@@ -136,6 +146,34 @@ EXTRACT_JS = r"""
     const offer = Array.isArray(ldProduct.offers) ? ldProduct.offers[0] : ldProduct.offers;
     const raw = Number(offer?.price ?? offer?.lowPrice);
     if (Number.isFinite(raw) && raw > 0) price = Number(raw.toFixed(2));
+  }
+
+  // Fallback for Lazada embedded tracking/module JSON when DOM price is delayed
+  if (price === null && hrefLower.includes('lazada.')) {
+    try {
+      const trackRaw = window.pdpTrackingData;
+      if (typeof trackRaw === 'string' && trackRaw.includes('pdt_price')) {
+        const parsedTrack = JSON.parse(trackRaw);
+        const pdtPrice = parsePriceNumber(String(parsedTrack?.pdt_price || ''), true);
+        if (pdtPrice !== null) price = pdtPrice;
+      }
+    } catch {}
+    if (price === null) {
+      for (const s of document.querySelectorAll('script:not([src])')) {
+        const st = s.textContent || '';
+        if (!st.includes('salePrice') && !st.includes('pdt_price')) continue;
+        const m =
+          st.match(/"salePrice"\s*:\s*\{\s*"value"\s*:\s*([\d.]+)/) ||
+          st.match(/"pdt_price"\s*:\s*"?(?:RM|MYR)?\s*([\d,.]+)"?/i);
+        if (m) {
+          const val = Number(String(m[1]).replace(/,/g, ''));
+          if (Number.isFinite(val) && val > 0 && val < 500000) {
+            price = Number(val.toFixed(2));
+            break;
+          }
+        }
+      }
+    }
   }
 
   // 3. Sold Count Extraction (Shopee .Ocv3B8 / .PfWbfd first, then visible "10k+ Sold" regex)

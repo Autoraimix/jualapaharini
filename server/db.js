@@ -200,6 +200,151 @@ export function initDatabase() {
       kind TEXT NOT NULL DEFAULT 'update',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS custom_personas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      is_enabled TEXT NOT NULL DEFAULT 'true',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS thread_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      password TEXT NOT NULL,
+      product_key TEXT,
+      api_key TEXT,
+      persona TEXT NOT NULL DEFAULT 'Professional Marketer',
+      posts_per_day INTEGER NOT NULL DEFAULT 1,
+      timezone TEXT NOT NULL DEFAULT 'Asia/Kuala_Lumpur',
+      rate_limited_until TEXT,
+      token_issued_at TEXT,
+      proxy_url TEXT,
+      strikes INTEGER NOT NULL DEFAULT 0,
+      labels TEXT,
+      writing_instructions TEXT,
+      auto_post_enabled TEXT NOT NULL DEFAULT 'false',
+      auto_post_max_per_day TEXT NOT NULL DEFAULT '1',
+      auto_post_mode TEXT NOT NULL DEFAULT 'draft',
+      auto_post_window_start TEXT NOT NULL DEFAULT '08:00',
+      auto_post_window_end TEXT NOT NULL DEFAULT '22:00',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS threads_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      posts TEXT NOT NULL,
+      personas TEXT,
+      topic TEXT NOT NULL,
+      post_type TEXT NOT NULL DEFAULT 'single',
+      status TEXT NOT NULL DEFAULT 'draft',
+      is_draft TEXT NOT NULL DEFAULT 'true',
+      scheduled_at TEXT,
+      published_at TEXT,
+      error_message TEXT,
+      threads_post_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS threads_scheduled_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL REFERENCES thread_accounts(id) ON DELETE CASCADE,
+      topic TEXT NOT NULL,
+      content TEXT NOT NULL,
+      scheduled_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      next_retry_at TEXT,
+      content_hash TEXT,
+      published_at TEXT,
+      threads_post_id TEXT,
+      error_message TEXT,
+      image_url TEXT,
+      source TEXT NOT NULL DEFAULT 'scheduled',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS threads_reply_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id TEXT NOT NULL,
+      target_url TEXT NOT NULL,
+      target_media_id TEXT NOT NULL,
+      target_owner_account_id INTEGER REFERENCES thread_accounts(id) ON DELETE SET NULL,
+      target_text TEXT,
+      account_id INTEGER NOT NULL REFERENCES thread_accounts(id) ON DELETE CASCADE,
+      persona_snapshot TEXT,
+      reply_text TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      scheduled_at TEXT,
+      published_at TEXT,
+      threads_reply_id TEXT,
+      error_message TEXT,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      next_retry_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS content_edits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER REFERENCES thread_accounts(id) ON DELETE SET NULL,
+      persona TEXT,
+      topic TEXT,
+      original_content TEXT NOT NULL,
+      edited_content TEXT NOT NULL,
+      user_comment TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS post_topic_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      links TEXT,
+      post_type TEXT NOT NULL DEFAULT 'single',
+      post_length TEXT NOT NULL DEFAULT 'medium',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS automation_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'error',
+      error_message TEXT NOT NULL,
+      error_code TEXT,
+      context TEXT,
+      account_id INTEGER REFERENCES thread_accounts(id) ON DELETE SET NULL,
+      post_id INTEGER REFERENCES threads_scheduled_posts(id) ON DELETE SET NULL,
+      fix_type TEXT,
+      fix_applied TEXT,
+      fix_outcome TEXT,
+      ai_diagnosis TEXT,
+      ai_suggestion TEXT,
+      ai_confidence TEXT,
+      resolved_at TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS system_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_cost_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      model TEXT NOT NULL,
+      module TEXT,
+      prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      estimated_cost_usd REAL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
   `);
 
   const adminCount = db.prepare('SELECT COUNT(*) AS count FROM admin_users').get().count;

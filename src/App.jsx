@@ -28,6 +28,30 @@ const CATEGORY_IMAGES = {
   beauty: '/categories/beauty.svg',
   fashion: '/categories/fashion.svg',
   fitness: '/categories/fitness.svg',
+  'mobile-accessories': '/categories/mobile-accessories.svg',
+  'computer-laptop': '/categories/computer-laptop.svg',
+  gaming: '/categories/gaming.svg',
+  audio: '/categories/audio.svg',
+  cameras: '/categories/cameras.svg',
+  'smart-home': '/categories/smart-home.svg',
+  appliances: '/categories/appliances.svg',
+  furniture: '/categories/furniture.svg',
+  bedding: '/categories/bedding.svg',
+  groceries: '/categories/groceries.svg',
+  'health-supplements': '/categories/health-supplements.svg',
+  'baby-kids': '/categories/baby-kids.svg',
+  'toys-hobbies': '/categories/toys-hobbies.svg',
+  pets: '/categories/pets.svg',
+  automotive: '/categories/automotive.svg',
+  'travel-luggage': '/categories/travel-luggage.svg',
+  'stationery-office': '/categories/stationery-office.svg',
+  'books-media': '/categories/books-media.svg',
+  'watches-jewelry': '/categories/watches-jewelry.svg',
+  'bags-wallets': '/categories/bags-wallets.svg',
+  'shoes-footwear': '/categories/shoes-footwear.svg',
+  'outdoor-camping': '/categories/outdoor-camping.svg',
+  'tools-hardware': '/categories/tools-hardware.svg',
+  'gifts-festive': '/categories/gifts-festive.svg',
 };
 
 const SORT_OPTIONS = [
@@ -303,14 +327,23 @@ export default function App() {
     admin: 'Admin Portal',
   }[activeTab];
 
+  const isAdminView = activeTab === 'admin';
+
   return (
     <div className="min-h-screen bg-[#F7F3EE] pb-28 text-[#1D1C1A] md:pb-10">
-      <div className="w-full px-4 pt-4 sm:px-6 md:flex md:items-start md:gap-6 md:px-6 md:pt-5">
-        {/* Desktop Sidebar Navigation (normal browser >= 768px) */}
-        <aside
-          aria-label="Sidebar navigation"
-          className="hidden md:sticky md:top-5 md:flex md:h-[calc(100vh-40px)] md:w-60 md:shrink-0 md:flex-col md:justify-between md:rounded-[28px] md:bg-[#1E1D1B] md:p-5 md:text-white md:shadow-[0_14px_38px_rgba(18,16,14,0.18)]"
-        >
+      <div
+        className={
+          isAdminView
+            ? 'w-full px-4 pt-4 sm:px-6 md:px-6 md:pt-5'
+            : 'w-full px-4 pt-4 sm:px-6 md:flex md:items-start md:gap-6 md:px-6 md:pt-5'
+        }
+      >
+        {/* Desktop Sidebar Navigation (storefront only; Admin has its own dedicated sidebar) */}
+        {!isAdminView && (
+          <aside
+            aria-label="Sidebar navigation"
+            className="hidden md:sticky md:top-5 md:flex md:h-[calc(100vh-40px)] md:w-60 md:shrink-0 md:flex-col md:justify-between md:rounded-[28px] md:bg-[#1E1D1B] md:p-5 md:text-white md:shadow-[0_14px_38px_rgba(18,16,14,0.18)]"
+          >
           <div className="space-y-5">
             {/* Brand */}
             <div className="flex items-center gap-2.5 px-1">
@@ -381,11 +414,13 @@ export default function App() {
             </div>
           </div>
         </aside>
+        )}
 
         {/* Main Content Column */}
         <div className="min-w-0 flex-1">
-          {/* Top Bar */}
-          <header className="mb-4 flex items-center justify-between gap-3">
+          {/* Top Bar (storefront only; Admin renders its own header) */}
+          {!isAdminView && (
+            <header className="mb-4 flex items-center justify-between gap-3">
             {/* Mobile Brand */}
             <div className="flex items-center gap-2.5 md:hidden">
               <img
@@ -432,6 +467,7 @@ export default function App() {
               )}
             </div>
           </header>
+          )}
 
         {/* Live Store Updates / Admin Notifications Panel (Storefront only, hidden on /admin) */}
         {showDropsToast && activeTab !== 'admin' && (
@@ -551,7 +587,7 @@ export default function App() {
                       )}
                     </div>
                     <span
-                      className={`text-[11px] font-bold ${
+                      className={`max-w-[74px] text-center text-[11px] font-bold leading-tight ${
                         active ? 'text-[#E26D32]' : 'text-[#6E655D]'
                       }`}
                     >
@@ -723,6 +759,8 @@ export default function App() {
           <AdminDashboard
             categories={categories}
             products={allProductsCache.length ? allProductsCache : products}
+            storeName={storeSettings.store_name}
+            onNavigateStorefront={() => navigateTab('home')}
             onCatalogChanged={async () => {
               await loadProducts();
               await loadFullCatalog();
@@ -734,8 +772,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* Dark Floating Bottom Navigation Bar (Mobile / PWA only — Admin accessed via /admin) */}
-      {(() => {
+      {/* Dark Floating Bottom Navigation Bar (Mobile / PWA storefront only) */}
+      {!isAdminView && (() => {
         const smartNavActive =
           showSmartModal ||
           (activeTab === 'home' &&

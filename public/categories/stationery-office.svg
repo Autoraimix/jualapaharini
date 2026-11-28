@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorSO" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coralSO" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="204" rx="74" ry="15" fill="url(#floorSO)"/>
+  <rect x="66" y="58" width="106" height="136" rx="18" fill="#F3E4D1"/>
+  <rect x="82" y="72" width="74" height="26" rx="8" fill="#FFFDF9"/>
+  <path d="M84 118 L152 118 M84 136 L144 136 M84 154 L132 154" stroke="#C9B7A2" stroke-width="6" stroke-linecap="round"/>
+  <rect x="58" y="82" width="16" height="10" rx="5" fill="#98BCAE"/>
+  <rect x="58" y="106" width="16" height="10" rx="5" fill="#98BCAE"/>
+  <rect x="58" y="130" width="16" height="10" rx="5" fill="#98BCAE"/>
+  <rect x="58" y="154" width="16" height="10" rx="5" fill="#98BCAE"/>
+  <g transform="rotate(24 178 134)">
+    <rect x="168" y="64" width="18" height="120" rx="9" fill="url(#coralSO)"/>
+    <path d="M168 176 L177 196 L186 176 Z" fill="#1E1D1B"/>
+  </g>
+</svg>

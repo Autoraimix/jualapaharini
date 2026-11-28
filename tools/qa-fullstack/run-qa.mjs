@@ -374,7 +374,7 @@ async function run() {
       `<!doctype html><html><head><title>UGREEN 65W | Lazada</title></head><body>
       <h1 class="pdp-mod-product-badge-title-v2"><img src="https://img.lazcdn.com/g/tps/imgextra/i4/O1CN01YxEyp41Pm0TSbDFdc_!!6000000001882-2-tps-130-40.png" class="pdp-mod-product-badge" alt="LazMall">【SIRIM Certificate】UGREEN 3 Ports 65W GaN Charger</h1>
       <div class="pdp-review-summary-v2"><span class="container-star-v2-score">5</span><span class="container-star-v2-count">(1396)</span></div>
-      <div class="pdp-v2-product-price-content"><div class="pdp-v2-product-price-content-salePrice"><span class="pdp-v2-product-price-content-salePrice-amount">RM60.03</span></div><div class="pdp-v2-product-price-content-originalPrice"><span class="pdp-v2-product-price-content-originalPrice-amount">RM159.00</span></div></div>
+      <div class="pdp-v2-product-price-content"><div class="pdp-v2-product-price-content-salePrice"><span class="pdp-v2-product-price-content-salePrice-sign">RM</span><span class="pdp-v2-product-price-content-salePrice-amount">60.03</span></div><div class="pdp-v2-product-price-content-originalPrice"><span class="pdp-v2-product-price-content-originalPrice-amount">RM159.00</span></div></div>
       <div id="module_item_gallery_1"><div class="item-gallery-v2">
         <div class="gallery-preview-panel-v2"><img class="gallery-preview-panel-v2__image" src="https://img.lazcdn.com/g/p/f5aecef1b2f751ce38b5ec8670031c28.jpg_720x720q80.jpg_.webp"></div>
         <div class="item-gallery-v2__thumbnail"><img class="item-gallery-v2__thumbnail-image" src="https://img.lazcdn.com/g/p/f5aecef1b2f751ce38b5ec8670031c28.jpg_80x80q80.jpg_.webp"></div>
@@ -612,7 +612,7 @@ with sync_playwright() as p:
     page.get_by_placeholder("Smart search (e.g. ps5, under 80, kipas, #011)").fill("earbuds under 80")
     page.get_by_role("button", name="Smart Search").click()
     page.wait_for_timeout(400)
-    assert page.locator("[data-testid='admin-catalog-row']").count() >= 1 and page.get_by_text("Anker Soundcore").is_visible(), "Admin Smart Search must filter matching products"
+    assert page.locator("[data-testid='admin-catalog-row']").count() >= 1 and page.locator("[data-testid='admin-catalog-row']").get_by_text("Anker Soundcore").first.is_visible(), "Admin Smart Search must filter matching products"
     page.get_by_role("button", name="Clear catalog search").click()
     page.wait_for_timeout(150)
 
@@ -622,28 +622,43 @@ with sync_playwright() as p:
     labels = page.locator("form label").all_inner_texts()
     assert labels == ["Username *", "Current Password *", "New Password", "Confirmation Password"], f"Unexpected Change Password labels: {labels}"
 
-    # Check Add Product form: Category has no emoji, Image uses file upload only (no URL input)
+    # Check Add Product form: 26+ ASCII categories inside searchable scrollable dropdown, auto >=5 tags, Chrome Sync only (no legacy sync buttons), file-only image upload
     page.get_by_role("button", name="Catalog").click()
     page.get_by_role("button", name="Add Product").click()
     page.wait_for_timeout(200)
-    cat_opts = page.locator("select option").all_inner_texts()
+    page.get_by_role("button", name="Select category").click()
+    page.wait_for_timeout(150)
+    cat_opts = page.locator("[role='listbox'][aria-label='Category options'] [role='option']").all_inner_texts()
+    assert len(cat_opts) >= 26, f"Expected 26+ categories, got {len(cat_opts)}"
     assert all(opt.isascii() for opt in cat_opts), f"Category dropdown still contains icons/emojis: {cat_opts}"
+    assert page.get_by_placeholder("Smart search category...").is_visible(), "Category smart search input must be visible inside dropdown"
+    page.get_by_placeholder("Smart search category...").fill("automotive")
+    page.wait_for_timeout(150)
+    assert page.get_by_role("listbox", name="Category options").get_by_text("Automotive & Motor").is_visible(), "Category smart search must filter matching category"
+    page.get_by_role("listbox", name="Category options").get_by_text("Automotive & Motor").click()
+    page.wait_for_timeout(100)
+    page.get_by_placeholder("e.g. Baseus MagSafe Powerbank 10000mAh").fill("Baseus Wireless Earbuds Pro")
+    page.wait_for_timeout(150)
+    auto_tags_val = page.locator("textarea[placeholder*='Auto-generated']").input_value()
+    auto_tags_list = [t.strip() for t in auto_tags_val.split(",") if t.strip()]
+    assert len(auto_tags_list) >= 5, f"Expected >= 5 auto-generated smart search tags, got {auto_tags_list}"
     assert page.get_by_placeholder("https://... or /uploads/...").count() == 0, "Image URL input should be removed"
     assert page.locator("input[type='file'][accept='image/*']").count() == 1, "Image file upload input must exist"
     assert page.get_by_role("button", name="Chrome Sync", exact=True).first.is_visible(), "Chrome Sync button must appear on store cards"
+    assert page.get_by_role("button", name="Bookmarklet Sync").count() == 0, "Bookmarklet Sync must be removed"
+    assert page.get_by_role("button", name="Paste Sync").count() == 0, "Paste Sync must be removed"
+    assert page.get_by_role("button", name="Quick Paste").count() == 0, "Quick Paste must be removed"
+    assert page.get_by_role("button", name="Auto-Fetch").count() == 0, "Auto-Fetch must be removed"
 
-    # Test Bookmarklet toggle and Quick Paste extraction in UI
-    page.get_by_role("button", name="Bookmarklet Sync").click()
-    assert page.get_by_role("link", name="⚡ HJA Sync").is_visible(), "Bookmarklet drag pill should appear"
-    page.get_by_role("button", name="Quick Paste").first.click()
-    page.locator("textarea[placeholder*='Paste copied product text']").fill("Test Gadget RM65.50 ★ 4.9 2.5k sold")
-    page.get_by_role("button", name="Extract Price & Rating").click()
-    page.wait_for_timeout(200)
-    assert page.get_by_text("Synced from Quick Paste: RM 65.50 • ★ 4.9 • 2,500 sold").is_visible(), "Quick Paste should show green success banner"
-
-    # Log out cleanly
+    # Log out cleanly via confirmation + result modal
     page.get_by_role("button", name="Log Out").click()
+    page.wait_for_timeout(200)
+    assert page.get_by_role("heading", name="Confirm Sign Out").is_visible(), "Logout confirmation modal must appear"
+    page.get_by_role("button", name="Yes, Log Out").click()
     page.wait_for_timeout(300)
+    assert page.get_by_role("heading", name="Signed Out Successfully").is_visible(), "Logout success modal must appear"
+    page.get_by_role("button", name="Done").click()
+    page.wait_for_timeout(200)
     assert page.get_by_role("heading", name="Admin Sign In").is_visible(), "Should return to Admin Sign In on Log Out"
 
     # Mobile PWA Viewport (420x860)
@@ -663,6 +678,24 @@ with sync_playwright() as p:
     mpage.wait_for_timeout(150)
     assert smart_nav.get_attribute("aria-pressed") == "true", "Smart Search must highlight when clicked"
 
+    # Mobile Admin Dashboard E2E Audit (420x860)
+    mpage.goto("${BASE_URL}/admin", wait_until="networkidle")
+    mpage.wait_for_timeout(300)
+    mpage.get_by_placeholder("Enter username").fill("admin")
+    mpage.get_by_placeholder("Enter password").fill("qa_password_123")
+    mpage.get_by_role("button", name="Sign In", exact=True).click()
+    mpage.wait_for_timeout(500)
+    assert mpage.get_by_role("heading", name="Admin Dashboard").is_visible(), "Mobile Admin Dashboard heading must show"
+    assert mpage.locator("nav[aria-label='Admin mobile navigation']").is_visible(), "Mobile Admin bottom dock must be visible"
+    assert mpage.locator("nav[aria-label='Primary navigation']").count() == 0, "Shopper bottom dock must stay hidden on mobile /admin"
+    has_overflow = mpage.evaluate("() => document.documentElement.scrollWidth > document.documentElement.clientWidth")
+    assert not has_overflow, "Mobile Admin Dashboard must have zero horizontal overflow"
+    mpage.get_by_role("button", name="Log Out").click()
+    mpage.wait_for_timeout(150)
+    mpage.get_by_role("button", name="Yes, Log Out").click()
+    mpage.wait_for_timeout(250)
+    mpage.get_by_role("button", name="Done").click()
+
     b.close()
 assert len(errors) == 0, f"Console/Page errors: {errors}"
 print("PLAYWRIGHT_QA_OK")
@@ -674,48 +707,21 @@ print("PLAYWRIGHT_QA_OK")
       py.stderr || py.stdout
     );
 
-    // 4. Dedicated 10-minute idle timeout check (using short timeout env var)
-    const idleSrv = spawn('node', ['server/index.js'], {
-      cwd: ROOT,
-      env: {
-        ...process.env,
-        PORT: '3097',
-        DB_PATH: QA_DB,
-        ADMIN_IDLE_TIMEOUT_MINUTES: '0.01', // 0.6s for deterministic QA test
-      },
-      stdio: 'pipe',
+    // 4. Persistent admin session check (no inactivity auto-logout)
+    await waitForServer(BASE_URL);
+    const freshLogin = await fetch(`${BASE_URL}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Connection: 'close' },
+      body: JSON.stringify({ username: 'admin', password: 'qa_password_123' }),
+    }).then((r) => r.json());
+    const verifyRes = await fetch(`${BASE_URL}/api/admin/verify`, {
+      headers: { Authorization: `Bearer ${freshLogin.token}`, Connection: 'close' },
     });
-    try {
-      const idleReady = await waitForServer('http://localhost:3097');
-      assert(idleReady, 'Idle timeout test server started');
-      const ilogin = await fetch('http://localhost:3097/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: 'admin', password: 'qa_password_123' }),
-      }).then((r) => r.json());
-      await new Promise((r) => setTimeout(r, 350));
-      const keepRes = await fetch('http://localhost:3097/api/admin/keepalive', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${ilogin.token}` },
-      });
-      assert(keepRes.ok, 'Admin keepalive refreshes active session');
-      await new Promise((r) => setTimeout(r, 250));
-      const passiveRes = await fetch('http://localhost:3097/api/admin/verify?passive=1', {
-        headers: { Authorization: `Bearer ${ilogin.token}` },
-      });
-      assert(passiveRes.ok, 'Passive verify succeeds before timeout without inflating activity');
-      await new Promise((r) => setTimeout(r, 650));
-      const expiredRes = await fetch('http://localhost:3097/api/admin/verify?passive=1', {
-        headers: { Authorization: `Bearer ${ilogin.token}` },
-      });
-      const expiredJson = await expiredRes.json();
-      assert(
-        expiredRes.status === 401 && expiredJson.code === 'SESSION_EXPIRED',
-        'Idle timeout triggers SESSION_EXPIRED only after true inactivity threshold'
-      );
-    } finally {
-      idleSrv.kill();
-    }
+    const verifyJson = await verifyRes.json();
+    assert(
+      verifyRes.ok && verifyJson.ok === true,
+      'Admin session remains valid without inactivity timeout'
+    );
   } finally {
     srv.kill();
     await new Promise((r) => setTimeout(r, 400));

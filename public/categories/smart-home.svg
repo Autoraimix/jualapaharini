@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorSH" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hubBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="55%" stop-color="#F3E5D4"/>
+      <stop offset="100%" stop-color="#D7C3AE"/>
+    </linearGradient>
+    <linearGradient id="coralSH" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="204" rx="74" ry="15" fill="url(#floorSH)"/>
+  <path d="M90 88 C110 70 146 70 166 88" fill="none" stroke="url(#coralSH)" stroke-width="8" stroke-linecap="round"/>
+  <path d="M104 104 C118 92 138 92 152 104" fill="none" stroke="#98BCAE" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="128" cy="152" r="46" fill="url(#hubBody)"/>
+  <path d="M84 162 C92 184 110 198 128 198 C146 198 164 184 172 162 Z" fill="#98BCAE" opacity="0.88"/>
+  <ellipse cx="128" cy="122" rx="28" ry="8" fill="#FFFFFF" opacity="0.8"/>
+  <circle cx="128" cy="122" r="5" fill="url(#coralSH)"/>
+</svg>

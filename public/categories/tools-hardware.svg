@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorTW" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coralTW" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="202" rx="74" ry="15" fill="url(#floorTW)"/>
+  <rect x="64" y="72" width="110" height="44" rx="16" fill="url(#coralTW)"/>
+  <rect x="174" y="84" width="28" height="20" rx="6" fill="#3B3733"/>
+  <rect x="202" y="90" width="18" height="8" rx="4" fill="#98BCAE"/>
+  <path d="M98 114 L84 176 C82 184 88 190 96 190 L118 190 C124 190 130 184 130 176 L134 114 Z" fill="#3B3733"/>
+  <rect x="74" y="176" width="70" height="18" rx="9" fill="#F3E4D1"/>
+  <circle cx="136" cy="94" r="10" fill="#FFFDF9"/>
+</svg>

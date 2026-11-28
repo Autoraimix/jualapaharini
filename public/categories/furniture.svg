@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorFN" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="chairCream" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="55%" stop-color="#F3E5D4"/>
+      <stop offset="100%" stop-color="#D7C3AE"/>
+    </linearGradient>
+    <linearGradient id="coralFN" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="204" rx="76" ry="14" fill="url(#floorFN)"/>
+  <path d="M78 164 L70 198 M178 164 L186 198" stroke="#8B5A3C" stroke-width="10" stroke-linecap="round"/>
+  <rect x="66" y="62" width="124" height="80" rx="26" fill="url(#chairCream)"/>
+  <rect x="92" y="84" width="72" height="44" rx="16" fill="url(#coralFN)"/>
+  <rect x="54" y="126" width="148" height="42" rx="18" fill="url(#chairCream)"/>
+  <rect x="54" y="110" width="24" height="44" rx="12" fill="#E5D5C3"/>
+  <rect x="178" y="110" width="24" height="44" rx="12" fill="#E5D5C3"/>
+</svg>

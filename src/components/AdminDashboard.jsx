@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ArrowLeft,
+  Bot,
   Lock,
   Plus,
   Pencil,
@@ -12,19 +14,19 @@ import {
   Sparkles,
   KeyRound,
   User,
+  Users,
   Eye,
   EyeOff,
   ImagePlus,
   FileSpreadsheet,
-  ClipboardPaste,
-  Bookmark,
-  Copy,
   Globe,
   Play,
   Square,
   Search,
+  Store,
   ChevronLeft,
   ChevronRight,
+  Package,
   X,
 } from 'lucide-react';
 import {
@@ -40,10 +42,8 @@ import {
   extractOneViaChrome,
   fetchAdminAnalytics,
   fetchProducts,
-  fetchUrlMetadata,
   getChromeSyncStatus,
   getStoredToken,
-  keepAliveAdminSession,
   launchRealChrome,
   pollChromeBulkSync,
   setStoredToken,
@@ -54,6 +54,11 @@ import {
   uploadProductImage,
   verifyAdminSession,
 } from '../api';
+import { AdminThreadsPosting } from './AdminThreadsPosting';
+import { AdminPersonas } from './AdminPersonas';
+import { AdminOverviewBento } from './AdminOverviewBento';
+import { ConfirmDialog, ResultDialog } from './ActionModals';
+import { CategoryDropdown } from './CategoryDropdown';
 import {
   formatCompactSold,
   formatMYR,
@@ -61,9 +66,7 @@ import {
   PLATFORM_LIST,
 } from '../utils/format';
 import { computeMultiPlatformReliability } from './ReliabilityMeter';
-import { buildSyncBookmarkletHref, parseCopiedProductText } from '../utils/smartExtract';
-
-const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+import { generateSmartSearchTags, parseTagList } from '../utils/autoTags';
 
 const EMPTY_FORM = {
   code: '',
@@ -112,10 +115,16 @@ function StatusBanner({ banner, onDismiss }) {
   );
 }
 
-export function AdminDashboard({ categories, products, onCatalogChanged }) {
+export function AdminDashboard({
+  categories,
+  products,
+  onCatalogChanged,
+  storeName = 'BeliApaHarini',
+  onNavigateStorefront,
+}) {
   const [authed, setAuthed] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [adminMenu, setAdminMenu] = useState('catalog'); // 'catalog' | 'password'
+  const [adminMenu, setAdminMenu] = useState('catalog'); // 'catalog' | 'posting' | 'personas' | 'password'
 
   // Login form
   const [username, setUsername] = useState('');
@@ -132,13 +141,17 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [enabledPlatforms, setEnabledPlatforms] = useState(['shopee', 'tiktok']);
   const [saving, setSaving] = useState(false);
+  const [pendingSaveProduct, setPendingSaveProduct] = useState(null);
+  const [pendingDeleteProduct, setPendingDeleteProduct] = useState(null);
+  const [deletingProduct, setDeletingProduct] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutResultModal, setLogoutResultModal] = useState(null);
+  const [productResultModal, setProductResultModal] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [fetchingMeta, setFetchingMeta] = useState('');
   const [syncingChromeOne, setSyncingChromeOne] = useState('');
   const [platformMetaStatus, setPlatformMetaStatus] = useState({});
-  const [quickPasteOpen, setQuickPasteOpen] = useState({});
-  const [quickPasteText, setQuickPasteText] = useState({});
-  const [showBookmarklet, setShowBookmarklet] = useState(false);
+  const [tagsManuallyEdited, setTagsManuallyEdited] = useState(false);
   const [statusBanner, setStatusBanner] = useState(null);
 
   // Import / Export
@@ -178,35 +191,39 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPass, setChangingPass] = useState(false);
 
-  const idleTimerRef = useRef(null);
-
-  const handleSessionExpired = useCallback((msg) => {
-    setStoredToken('');
-    setAuthed(false);
-    setAnalytics(null);
-    setAuthError(
-      msg || 'Session expired after 10 minutes of inactivity. Please sign in again.'
-    );
-  }, []);
-
   const handleApiError = useCallback(
     (err, fallbackSetter = setStatusBanner) => {
       if (err?.status === 401) {
-        if (err.code === 'SESSION_EXPIRED') {
-          handleSessionExpired(err.message);
-        } else {
-          setStoredToken('');
-          setAuthed(false);
-          setAnalytics(null);
-        }
+        setStoredToken('');
+        setAuthed(false);
+        setAnalytics(null);
         return;
       }
       fallbackSetter({ type: 'error', text: err.message || 'An error occurred.' });
     },
-    [handleSessionExpired]
+    []
   );
 
-  // Verify existing stored token silently on mount (only show "Session expired" if server explicitly says SESSION_EXPIRED)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthStatus = params.get('oauth');
+    if (oauthStatus) {
+      setAdminMenu('posting');
+      if (oauthStatus === 'success') {
+        const user = params.get('username') || '';
+        setStatusBanner({
+          type: 'success',
+          text: user ? `Connected Threads account @${user}.` : 'Connected Threads account.',
+        });
+      } else {
+        const msg = params.get('message') || 'Threads OAuth authorization failed.';
+        setStatusBanner({ type: 'error', text: msg });
+      }
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Verify existing stored token silently on mount
   useEffect(() => {
     async function check() {
       const token = getStoredToken();
@@ -222,12 +239,9 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
           setCpUsername(res.username);
         }
         loadAnalytics();
-      } catch (err) {
+      } catch {
         setStoredToken('');
         setAuthed(false);
-        if (err?.code === 'SESSION_EXPIRED') {
-          setAuthError(err.message);
-        }
       } finally {
         setCheckingAuth(false);
       }
@@ -235,81 +249,15 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     check();
   }, []);
 
-  const chromeRunningRef = useRef(false);
-  chromeRunningRef.current = Boolean(chromeJob?.running);
-
-  // Keep session alive whenever user is touching the PC or Real Chrome sync is running;
-  // only lock out if PC is completely untouched for 10 full minutes.
-  useEffect(() => {
-    if (!authed) return;
-
-    let lastBrowserInputAt = Date.now();
-    const markActivity = () => {
-      lastBrowserInputAt = Date.now();
-    };
-
-    const events = [
-      'pointerdown',
-      'mousemove',
-      'keydown',
-      'scroll',
-      'wheel',
-      'touchstart',
-      'focus',
-    ];
-    events.forEach((ev) => window.addEventListener(ev, markActivity, { passive: true }));
-
-    const checkSession = async () => {
-      const recentlyTouchedTab = Date.now() - lastBrowserInputAt < 45000;
-      try {
-        if (recentlyTouchedTab || chromeRunningRef.current) {
-          await keepAliveAdminSession();
-        } else {
-          await verifyAdminSession(true);
-        }
-      } catch (err) {
-        if (err?.status === 401) {
-          if (err.code === 'SESSION_EXPIRED') {
-            handleSessionExpired(err.message);
-          } else {
-            setStoredToken('');
-            setAuthed(false);
-            setAnalytics(null);
-          }
-        }
-      }
-    };
-
-    const onVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible') {
-        lastBrowserInputAt = Date.now();
-        verifyAdminSession(true).catch((err) => {
-          if (err?.status === 401 && err.code === 'SESSION_EXPIRED') {
-            handleSessionExpired(err.message);
-          }
-        });
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibilityOrFocus);
-    window.addEventListener('focus', onVisibilityOrFocus);
-
-    const heartbeatId = setInterval(checkSession, 30000);
-
-    return () => {
-      clearInterval(heartbeatId);
-      events.forEach((ev) => window.removeEventListener(ev, markActivity));
-      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
-      window.removeEventListener('focus', onVisibilityOrFocus);
-    };
-  }, [authed, handleSessionExpired]);
-
   async function loadAnalytics() {
     try {
       const data = await fetchAdminAnalytics();
       setAnalytics(data);
     } catch (err) {
-      if (err?.status === 401 && err?.code === 'SESSION_EXPIRED') {
-        handleSessionExpired(err.message);
+      if (err?.status === 401) {
+        setStoredToken('');
+        setAuthed(false);
+        setAnalytics(null);
       }
     }
   }
@@ -334,22 +282,70 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     }
   }
 
-  async function handleLogout() {
+  function handleLogout() {
+    setShowLogoutConfirm(true);
+  }
+
+  async function confirmLogout() {
+    setLoggingOut(true);
     try {
       await adminLogout();
-    } catch {
-      // Ignore
+      setShowLogoutConfirm(false);
+      setStoredToken('');
+      setAuthed(false);
+      setAnalytics(null);
+      setAuthError('');
+      setStatusBanner(null);
+      setLogoutResultModal({
+        status: 'success',
+        title: 'Signed Out Successfully',
+        message: 'You have been safely signed out of the Admin Dashboard.',
+      });
+    } catch (err) {
+      setShowLogoutConfirm(false);
+      setStoredToken('');
+      setAuthed(false);
+      setAnalytics(null);
+      setAuthError('');
+      setStatusBanner(null);
+      setLogoutResultModal({
+        status: 'success',
+        title: 'Signed Out Successfully',
+        message:
+          err?.message && err.status !== 401
+            ? 'Your local session has been cleared and you are now signed out.'
+            : 'You have been safely signed out of the Admin Dashboard.',
+      });
+    } finally {
+      setLoggingOut(false);
     }
-    setStoredToken('');
-    setAuthed(false);
-    setAnalytics(null);
-    setAuthError('');
-    setStatusBanner(null);
+  }
+
+  function autoTagsForForm(nextForm, forceRegen = false) {
+    if (!forceRegen && tagsManuallyEdited) return nextForm.tags;
+    const catName =
+      categories.find((c) => c.slug === nextForm.category_slug)?.name || nextForm.category_slug;
+    return generateSmartSearchTags({
+      title: nextForm.title,
+      description: nextForm.description,
+      categorySlug: nextForm.category_slug,
+      categoryName: catName,
+      existingTags: forceRegen ? '' : '',
+      minTags: 5,
+    });
   }
 
   function openNewForm() {
     setEditingProduct(null);
-    setForm(EMPTY_FORM);
+    setTagsManuallyEdited(false);
+    const initialTags = generateSmartSearchTags({
+      categorySlug: EMPTY_FORM.category_slug,
+      categoryName:
+        categories.find((c) => c.slug === EMPTY_FORM.category_slug)?.name ||
+        EMPTY_FORM.category_slug,
+      minTags: 5,
+    });
+    setForm({ ...EMPTY_FORM, tags: initialTags });
     setEnabledPlatforms(['shopee', 'tiktok']);
     setPlatformMetaStatus({});
     setStatusBanner(null);
@@ -365,12 +361,28 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     setPlatformMetaStatus({});
     setStatusBanner(null);
 
+    const existingTagCount = parseTagList(prod.tags || '').length;
+    setTagsManuallyEdited(existingTagCount >= 5);
+    const catSlug = prod.category_slug || 'tech';
+    const catName = categories.find((c) => c.slug === catSlug)?.name || catSlug;
+    const resolvedTags =
+      existingTagCount >= 5
+        ? prod.tags
+        : generateSmartSearchTags({
+            title: prod.title || '',
+            description: prod.description || '',
+            categorySlug: catSlug,
+            categoryName: catName,
+            existingTags: prod.tags || '',
+            minTags: 5,
+          });
+
     setForm({
       code: prod.code || '',
       title: prod.title || '',
       description: prod.description || '',
-      category_slug: prod.category_slug || 'tech',
-      tags: prod.tags || '',
+      category_slug: catSlug,
+      tags: resolvedTags,
       image_url: prod.image_url || '',
       gallery_images: (() => {
         try {
@@ -419,127 +431,6 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     });
   }
 
-  function applyExtractedToPlatform(platform, rawText) {
-    const res = parseCopiedProductText(rawText);
-    if (!res.ok) {
-      setPlatformMetaStatus((prev) => ({
-        ...prev,
-        [platform]: { type: 'error', text: res.error },
-      }));
-      return;
-    }
-
-    setForm((prev) => ({
-      ...prev,
-      title: prev.title || res.title || '',
-      purchase_count:
-        res.sold !== null && (!prev.purchase_count || prev.purchase_count === '0')
-          ? String(res.sold)
-          : prev.purchase_count,
-      ...(res.url && !prev[`${platform}_url`] ? { [`${platform}_url`]: res.url } : {}),
-      ...(res.price !== null ? { [`${platform}_price`]: String(res.price) } : {}),
-      ...(res.rating !== null ? { [`${platform}_rating`]: String(res.rating) } : {}),
-    }));
-
-    const parts = [];
-    if (res.price !== null) parts.push(`RM ${res.price.toFixed(2)}`);
-    if (res.rating !== null) parts.push(`★ ${res.rating.toFixed(1)}`);
-    if (res.sold !== null) parts.push(`${res.sold.toLocaleString()} sold`);
-
-    setPlatformMetaStatus((prev) => ({
-      ...prev,
-      [platform]: {
-        type: 'success',
-        text: `Synced from ${res.source === 'bookmarklet' ? 'Bookmarklet' : 'Quick Paste'}: ${parts.join(' • ')}`,
-      },
-    }));
-    setQuickPasteOpen((prev) => ({ ...prev, [platform]: false }));
-    setQuickPasteText((prev) => ({ ...prev, [platform]: '' }));
-  }
-
-  async function handleClipboardPasteSync(platform) {
-    try {
-      if (navigator.clipboard && navigator.clipboard.readText) {
-        const clip = await navigator.clipboard.readText();
-        if (clip && clip.trim()) {
-          applyExtractedToPlatform(platform, clip);
-          return;
-        }
-      }
-      // Fallback: open inline paste box if clipboard permission denied or empty
-      setQuickPasteOpen((prev) => ({ ...prev, [platform]: true }));
-      setPlatformMetaStatus((prev) => ({
-        ...prev,
-        [platform]: {
-          type: 'error',
-          text: 'Clipboard empty or blocked — paste copied text into the box below.',
-        },
-      }));
-    } catch {
-      setQuickPasteOpen((prev) => ({ ...prev, [platform]: true }));
-    }
-  }
-
-  async function handleCopyBookmarklet() {
-    try {
-      await navigator.clipboard.writeText(buildSyncBookmarkletHref());
-      setStatusBanner({
-        type: 'success',
-        text: 'Bookmarklet code copied! Create a browser bookmark and paste it as the URL.',
-      });
-    } catch {
-      setStatusBanner({
-        type: 'error',
-        text: 'Could not copy automatically — drag the "⚡ HJA Sync" button to your bookmarks bar.',
-      });
-    }
-  }
-
-  async function handleAutoFetch(platform) {
-    const url = form[`${platform}_url`];
-    if (!url) {
-      setPlatformMetaStatus((prev) => ({
-        ...prev,
-        [platform]: { type: 'error', text: `Please enter a ${platform} URL first.` },
-      }));
-      return;
-    }
-    setFetchingMeta(platform);
-    setPlatformMetaStatus((prev) => ({ ...prev, [platform]: null }));
-    try {
-      const meta = await fetchUrlMetadata(url);
-      setForm((prev) => ({
-        ...prev,
-        title: prev.title || meta.title || '',
-        ...(meta.price !== null ? { [`${platform}_price`]: String(meta.price) } : {}),
-        ...(meta.rating !== null ? { [`${platform}_rating`]: String(meta.rating) } : {}),
-      }));
-      const gotAnything = meta.price !== null || meta.rating !== null;
-      setPlatformMetaStatus((prev) => ({
-        ...prev,
-        [platform]: {
-          type: gotAnything ? 'success' : 'error',
-          text:
-            meta.reason ||
-            (gotAnything
-              ? 'Price/rating fetched successfully.'
-              : 'Could not auto-fetch price/rating; please enter manually.'),
-        },
-      }));
-    } catch (err) {
-      if (err?.status === 401) {
-        handleApiError(err);
-      } else {
-        setPlatformMetaStatus((prev) => ({
-          ...prev,
-          [platform]: { type: 'error', text: err.message },
-        }));
-      }
-    } finally {
-      setFetchingMeta('');
-    }
-  }
-
   async function handleChromeSyncOne(platform) {
     const url = String(form[`${platform}_url`] || '').trim();
     if (!url || !/^https?:\/\//i.test(url)) {
@@ -572,15 +463,36 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
             ? String(meta.soldCount)
             : prev.purchase_count;
 
+        const nextTitle = prev.title || meta.title || '';
+        const catName =
+          categories.find((c) => c.slug === prev.category_slug)?.name || prev.category_slug;
+        const nextTags =
+          !tagsManuallyEdited || parseTagList(prev.tags).length < 5
+            ? generateSmartSearchTags({
+                title: nextTitle,
+                description: prev.description,
+                categorySlug: prev.category_slug,
+                categoryName: catName,
+                existingTags: tagsManuallyEdited ? prev.tags : '',
+                minTags: 5,
+              })
+            : prev.tags;
+
         return {
           ...prev,
-          title: prev.title || meta.title || '',
+          title: nextTitle,
+          tags: nextTags,
           purchase_count: nextPurchaseCount,
           ...(!stillHasImg && meta.imageUrl ? { image_url: meta.imageUrl } : {}),
           ...(!stillHasImg && Array.isArray(meta.galleryImages) && meta.galleryImages.length > 0
             ? { gallery_images: meta.galleryImages }
             : {}),
-          ...(meta.price !== null ? { [`${platform}_price`]: String(meta.price) } : {}),
+          ...(meta.price !== null
+            ? {
+                [`${platform}_price`]: String(meta.price),
+                [`${platform}_price_status`]: 'synced',
+              }
+            : {}),
           ...(meta.rating !== null ? { [`${platform}_rating`]: String(meta.rating) } : {}),
         };
       });
@@ -595,13 +507,23 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
         parts.push(`${meta.galleryImages?.length || 1} image(s) added`);
       }
 
-      setPlatformMetaStatus((prev) => ({
-        ...prev,
-        [platform]: {
-          type: 'success',
-          text: `Chrome Synced: ${parts.join(' • ') || 'Link checked'}`,
-        },
-      }));
+      if (meta.price === null) {
+        setPlatformMetaStatus((prev) => ({
+          ...prev,
+          [platform]: {
+            type: 'error',
+            text: `Chrome Sync extracted ${parts.join(' • ') || 'link details'}, but price was not detected on the page — please enter Price (RM) manually or retry Chrome Sync once the page finishes loading.`,
+          },
+        }));
+      } else {
+        setPlatformMetaStatus((prev) => ({
+          ...prev,
+          [platform]: {
+            type: 'success',
+            text: `Chrome Synced: ${parts.join(' • ')}`,
+          },
+        }));
+      }
     } catch (err) {
       if (err?.status === 401) {
         handleApiError(err);
@@ -632,7 +554,7 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     }
   }
 
-  async function handleSaveProduct(e) {
+  function handleSaveProduct(e) {
     e.preventDefault();
     if (!form.image_url) {
       setStatusBanner({ type: 'error', text: 'Please select and upload a product image file.' });
@@ -646,59 +568,142 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
       return;
     }
 
-    setSaving(true);
     setStatusBanner(null);
-    try {
-      const payload = {
-        ...form,
-        purchase_count: Number(form.purchase_count || 0),
-      };
-      const ratings = [];
+    const payload = {
+      ...form,
+      purchase_count: Number(form.purchase_count || 0),
+    };
+    const ratings = [];
+    const attachedPlatformNames = [];
 
-      for (const pl of PLATFORM_LIST) {
-        const isOn = enabledPlatforms.includes(pl.id) && String(form[`${pl.id}_url`] || '').trim();
-        if (isOn) {
-          payload[`${pl.id}_url`] = String(form[`${pl.id}_url`]).trim();
-          payload[`${pl.id}_price`] =
-            form[`${pl.id}_price`] === '' ? null : Number(form[`${pl.id}_price`]);
-          const r = form[`${pl.id}_rating`] === '' ? 4.8 : Number(form[`${pl.id}_rating`]);
-          payload[`${pl.id}_rating`] = r;
-          ratings.push(r);
-        } else {
-          payload[`${pl.id}_url`] = '';
-          payload[`${pl.id}_price`] = null;
-          payload[`${pl.id}_rating`] = null;
-        }
+    for (const pl of PLATFORM_LIST) {
+      const isOn = enabledPlatforms.includes(pl.id) && String(form[`${pl.id}_url`] || '').trim();
+      if (isOn) {
+        payload[`${pl.id}_url`] = String(form[`${pl.id}_url`]).trim();
+        payload[`${pl.id}_price`] =
+          form[`${pl.id}_price`] === '' ? null : Number(form[`${pl.id}_price`]);
+        const r = form[`${pl.id}_rating`] === '' ? 4.8 : Number(form[`${pl.id}_rating`]);
+        payload[`${pl.id}_rating`] = r;
+        ratings.push(r);
+        attachedPlatformNames.push(pl.shortName);
+      } else {
+        payload[`${pl.id}_url`] = '';
+        payload[`${pl.id}_price`] = null;
+        payload[`${pl.id}_rating`] = null;
       }
+    }
 
-      payload.reliability_score = computeMultiPlatformReliability(ratings, 4.8);
+    payload.reliability_score = computeMultiPlatformReliability(ratings, 4.8);
+    const categoryName =
+      categories.find((c) => c.slug === payload.category_slug)?.name || payload.category_slug;
 
-      if (editingProduct) {
-        await updateProduct(editingProduct.id, payload);
+    if (parseTagList(payload.tags).length < 5) {
+      payload.tags = generateSmartSearchTags({
+        title: payload.title,
+        description: payload.description,
+        categorySlug: payload.category_slug,
+        categoryName,
+        existingTags: payload.tags,
+        minTags: 5,
+      });
+    }
+
+    setPendingSaveProduct({
+      payload,
+      isEdit: Boolean(editingProduct),
+      productId: editingProduct?.id,
+      productCode: editingProduct?.code,
+      details: [
+        { label: 'Product Title', value: payload.title },
+        { label: 'Category', value: categoryName },
+        { label: 'Smart Tags', value: `${parseTagList(payload.tags).length} tag(s)` },
+        {
+          label: 'Store Links',
+          value: `${attachedPlatformNames.length} (${attachedPlatformNames.join(', ')})`,
+        },
+        { label: 'Trust Score', value: `★ ${payload.reliability_score.toFixed(1)}` },
+      ],
+    });
+  }
+
+  async function confirmSaveProduct() {
+    if (!pendingSaveProduct) return;
+    const { payload, isEdit, productId, productCode, details } = pendingSaveProduct;
+    setSaving(true);
+    try {
+      if (isEdit) {
+        await updateProduct(productId, payload);
         setStatusBanner({ type: 'success', text: 'Product updated in SQLite.' });
       } else {
         await createProduct(payload);
         setStatusBanner({ type: 'success', text: 'Product added to SQLite.' });
       }
+      setPendingSaveProduct(null);
       setShowForm(false);
       await onCatalogChanged();
       loadAnalytics();
+      setProductResultModal({
+        status: 'success',
+        title: isEdit ? 'Product Updated Successfully' : 'Product Added Successfully',
+        message: isEdit
+          ? `"${payload.title}" (${productCode}) has been updated and synced across your catalog.`
+          : `"${payload.title}" has been added to your catalog and is now live on the storefront.`,
+        details,
+      });
     } catch (err) {
-      handleApiError(err);
+      setPendingSaveProduct(null);
+      if (err?.status === 401) {
+        handleApiError(err);
+      } else {
+        const errMsg =
+          err?.message || 'An unexpected error occurred while saving the product.';
+        setStatusBanner({ type: 'error', text: errMsg });
+        setProductResultModal({
+          status: 'error',
+          title: isEdit ? 'Failed to Update Product' : 'Failed to Add Product',
+          message: errMsg,
+        });
+      }
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleDelete(prod) {
-    if (!window.confirm(`Delete ${prod.code} — ${prod.title}?`)) return;
+  function handleDelete(prod) {
+    setPendingDeleteProduct(prod);
+  }
+
+  async function confirmDeleteProduct() {
+    if (!pendingDeleteProduct) return;
+    const prod = pendingDeleteProduct;
+    setDeletingProduct(true);
     try {
       await deleteProduct(prod.id);
+      setPendingDeleteProduct(null);
       setStatusBanner({ type: 'success', text: `${prod.code} removed from catalog.` });
       await onCatalogChanged();
       loadAnalytics();
+      setProductResultModal({
+        status: 'success',
+        title: 'Product Deleted Successfully',
+        message: `${prod.code} — "${prod.title}" has been permanently removed from your catalog.`,
+      });
     } catch (err) {
-      handleApiError(err);
+      setPendingDeleteProduct(null);
+      if (err?.status === 401) {
+        handleApiError(err);
+      } else {
+        const errMsg =
+          err?.message || 'An unexpected error occurred while deleting the product.';
+        setStatusBanner({ type: 'error', text: errMsg });
+        setProductResultModal({
+          status: 'error',
+          title: 'Failed to Delete Product',
+          message: errMsg,
+        });
+      }
+    } finally {
+      setDeletingProduct(false);
     }
   }
 
@@ -1032,9 +1037,19 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
     }
   }
 
+  function scrollToCatalogSection() {
+    setAdminMenu('catalog');
+    setTimeout(() => {
+      document.getElementById('admin-catalog-section')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 50);
+  }
+
   if (checkingAuth) {
     return (
-      <div className="rounded-[28px] bg-white p-8 text-center text-sm font-semibold text-[#78716C] shadow-sm">
+      <div className="mx-auto max-w-md rounded-[28px] bg-white p-8 text-center text-sm font-semibold text-[#78716C] shadow-sm">
         Checking admin session...
       </div>
     );
@@ -1042,221 +1057,378 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
 
   if (!authed) {
     return (
-      <div className="mx-auto max-w-sm rounded-[28px] bg-white p-6 shadow-[0_8px_28px_rgba(32,24,16,0.06)]">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FFF0E6] text-[#F58C56]">
-          <Lock className="h-6 w-6" />
-        </div>
-        <h2 className="text-center text-xl font-extrabold text-[#1D1C1A]">Admin Sign In</h2>
-        <p className="mt-1 text-center text-xs leading-relaxed text-[#8C837A]">
-          Sign in with your administrator account to manage products, store links, and imports.
-        </p>
-
-        <form onSubmit={handleLogin} className="mt-5 space-y-3.5">
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-[#6E655D]">Username</label>
-            <div className="flex items-center gap-2.5 rounded-2xl bg-[#FAF7F2] px-3.5 py-3 focus-within:ring-2 focus-within:ring-[#F58C56]">
-              <User className="h-4 w-4 shrink-0 text-[#8C837A]" />
-              <input
-                type="text"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter username"
-                className="w-full bg-transparent text-sm font-semibold text-[#1D1C1A] placeholder:text-[#A39A91] focus:outline-none"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-[#6E655D]">Password</label>
-            <div className="flex items-center gap-2.5 rounded-2xl bg-[#FAF7F2] px-3.5 py-3 focus-within:ring-2 focus-within:ring-[#F58C56]">
-              <KeyRound className="h-4 w-4 shrink-0 text-[#8C837A]" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
-                className="w-full bg-transparent text-sm font-semibold text-[#1D1C1A] placeholder:text-[#A39A91] focus:outline-none"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((s) => !s)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                className="text-[#8C837A] hover:text-[#1D1C1A]"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-
-          {authError && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-xs font-semibold text-rose-700">
-              {authError}
-            </div>
-          )}
-
+      <div className="mx-auto max-w-sm space-y-3 py-6">
+        {onNavigateStorefront && (
           <button
-            type="submit"
-            disabled={loggingIn}
-            className="w-full rounded-2xl bg-[#1E1D1B] py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-black disabled:opacity-60"
+            type="button"
+            onClick={onNavigateStorefront}
+            className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-[#6E655D] shadow-sm transition hover:text-[#1D1C1A]"
           >
-            {loggingIn ? 'Signing in...' : 'Sign In'}
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to Storefront
           </button>
-        </form>
+        )}
+        <div className="rounded-[28px] bg-white p-6 shadow-[0_8px_28px_rgba(32,24,16,0.06)]">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FFF0E6] text-[#F58C56]">
+            <Lock className="h-6 w-6" />
+          </div>
+          <h2 className="text-center text-xl font-extrabold text-[#1D1C1A]">Admin Sign In</h2>
+          <p className="mt-1 text-center text-xs leading-relaxed text-[#8C837A]">
+            Sign in with your administrator account to manage products, store links, and imports.
+          </p>
+
+          <form onSubmit={handleLogin} className="mt-5 space-y-3.5">
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-[#6E655D]">Username</label>
+              <div className="flex items-center gap-2.5 rounded-2xl bg-[#FAF7F2] px-3.5 py-3 focus-within:ring-2 focus-within:ring-[#F58C56]">
+                <User className="h-4 w-4 shrink-0 text-[#8C837A]" />
+                <input
+                  type="text"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter username"
+                  className="w-full bg-transparent text-sm font-semibold text-[#1D1C1A] placeholder:text-[#A39A91] focus:outline-none"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-[#6E655D]">Password</label>
+              <div className="flex items-center gap-2.5 rounded-2xl bg-[#FAF7F2] px-3.5 py-3 focus-within:ring-2 focus-within:ring-[#F58C56]">
+                <KeyRound className="h-4 w-4 shrink-0 text-[#8C837A]" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  className="w-full bg-transparent text-sm font-semibold text-[#1D1C1A] placeholder:text-[#A39A91] focus:outline-none"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="text-[#8C837A] hover:text-[#1D1C1A]"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {authError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-xs font-semibold text-rose-700">
+                {authError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loggingIn}
+              className="w-full rounded-2xl bg-[#1E1D1B] py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-black disabled:opacity-60"
+            >
+              {loggingIn ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
+        </div>
+
+        <ResultDialog
+          open={Boolean(logoutResultModal)}
+          status={logoutResultModal?.status || 'success'}
+          title={logoutResultModal?.title}
+          message={logoutResultModal?.message}
+          onClose={() => setLogoutResultModal(null)}
+        />
       </div>
     );
   }
 
+  const menuNavItems = [
+    { id: 'catalog', label: 'Catalog', icon: Package, badge: products.length },
+    { id: 'posting', label: 'AI Posting', icon: Bot },
+    { id: 'personas', label: 'Personas', icon: Users },
+  ];
+
+  const generalNavItems = [
+    { id: 'password', label: 'Change Password', icon: KeyRound },
+  ];
+
   return (
-    <div className="space-y-4">
-      {/* Admin Top Header + Sub-menu + Log Out */}
-      <section className="rounded-[28px] bg-white p-5 shadow-[0_8px_28px_rgba(32,24,16,0.05)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-extrabold text-[#1D1C1A]">Admin Dashboard</h2>
+    <div className="pb-24 md:flex md:items-start md:gap-5 md:pb-0">
+      {/* Desktop Admin Sidebar (Donezo-inspired structure with current system colors) */}
+      <aside
+        aria-label="Admin sidebar"
+        className="hidden md:sticky md:top-5 md:flex md:h-[calc(100vh-40px)] md:w-60 md:shrink-0 md:flex-col md:justify-between md:rounded-[28px] md:border md:border-[#EFE9E0] md:bg-white md:p-4 md:shadow-[0_8px_28px_rgba(32,24,16,0.05)]"
+      >
+        <div className="space-y-6">
+          {/* Brand Header */}
+          <div className="flex items-center justify-between gap-2 px-1.5 pt-1">
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/favicon.svg"
+                alt={storeName}
+                className="h-9 w-9 shrink-0 rounded-xl shadow-sm"
+              />
+              <div>
+                <div className="text-sm font-extrabold tracking-tight text-[#1D1C1A]">
+                  {storeName}
+                </div>
+                <div className="text-[10px] font-bold text-[#F58C56]">Admin Studio</div>
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-full bg-[#FAF7F2] p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setAdminMenu('catalog');
-                  setStatusBanner(null);
-                }}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
-                  adminMenu === 'catalog'
-                    ? 'bg-[#1E1D1B] text-white'
-                    : 'text-[#6E655D] hover:text-[#1D1C1A]'
-                }`}
-              >
-                Catalog
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAdminMenu('password');
-                  setStatusBanner(null);
-                }}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
-                  adminMenu === 'password'
-                    ? 'bg-[#1E1D1B] text-white'
-                    : 'text-[#6E655D] hover:text-[#1D1C1A]'
-                }`}
-              >
-                Change Password
-              </button>
+          {/* MENU Section */}
+          <div>
+            <div className="mb-2 px-2.5 text-[10px] font-extrabold uppercase tracking-wider text-[#A39A91]">
+              Menu
+            </div>
+            <nav className="space-y-1">
+              {menuNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = adminMenu === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setAdminMenu(item.id);
+                      setStatusBanner(null);
+                    }}
+                    className={`relative flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-xs font-bold transition ${
+                      isActive
+                        ? 'bg-[#FAF7F2] text-[#1D1C1A]'
+                        : 'text-[#6E655D] hover:bg-[#FAF7F2] hover:text-[#1D1C1A]'
+                    }`}
+                  >
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[#F58C56]" />
+                    )}
+                    <span className="flex items-center gap-2.5">
+                      <Icon
+                        className={`h-4 w-4 ${isActive ? 'text-[#F58C56]' : 'text-[#8C837A]'}`}
+                      />
+                      {item.label}
+                    </span>
+                    {typeof item.badge === 'number' && (
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${
+                          isActive
+                            ? 'bg-[#1E1D1B] text-white'
+                            : 'bg-[#FAF7F2] text-[#6E655D]'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* GENERAL Section */}
+          <div>
+            <div className="mb-2 px-2.5 text-[10px] font-extrabold uppercase tracking-wider text-[#A39A91]">
+              General
+            </div>
+            <nav className="space-y-1">
+              {generalNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = adminMenu === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setAdminMenu(item.id);
+                      setStatusBanner(null);
+                    }}
+                    className={`relative flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-xs font-bold transition ${
+                      isActive
+                        ? 'bg-[#FAF7F2] text-[#1D1C1A]'
+                        : 'text-[#6E655D] hover:bg-[#FAF7F2] hover:text-[#1D1C1A]'
+                    }`}
+                  >
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[#F58C56]" />
+                    )}
+                    <Icon
+                      className={`h-4 w-4 ${isActive ? 'text-[#F58C56]' : 'text-[#8C837A]'}`}
+                    />
+                    {item.label}
+                  </button>
+                );
+              })}
+              {onNavigateStorefront && (
+                <button
+                  type="button"
+                  onClick={onNavigateStorefront}
+                  className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-xs font-bold text-[#6E655D] transition hover:bg-[#FAF7F2] hover:text-[#1D1C1A]"
+                >
+                  <Store className="h-4 w-4 text-[#8C837A]" />
+                  View Storefront
+                </button>
+              )}
+            </nav>
+          </div>
+        </div>
+
+        {/* Bottom Dark Workspace Card (Matching Donezo dark bottom widget in System Charcoal + Orange) */}
+        <div className="relative overflow-hidden rounded-[22px] bg-[#1E1D1B] p-4 text-white">
+          <div
+            className="pointer-events-none absolute -bottom-8 -right-8 h-28 w-28 rounded-full opacity-30 blur-xl"
+            style={{ background: 'radial-gradient(circle, #F58C56 0%, transparent 70%)' }}
+          />
+          <div className="relative">
+            <div className="text-xs font-extrabold text-white">Quick Product Entry</div>
+            <p className="mt-1 text-[11px] leading-relaxed text-[#A69F98]">
+              Add affiliate deals or launch Chrome sync in one click.
+            </p>
+            <button
+              type="button"
+              onClick={openNewForm}
+              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-[#F58C56] px-3 py-2 text-[11px] font-extrabold text-white transition hover:bg-[#e57c45]"
+            >
+              <Plus className="h-3.5 w-3.5" /> New Deal
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Admin Workspace Column */}
+      <div className="min-w-0 flex-1 space-y-3.5 sm:space-y-4">
+        {/* Top Search & Profile Bar (Responsive mobile-first layout) */}
+        <header className="flex flex-wrap items-center justify-between gap-2.5 rounded-[22px] border border-[#EFE9E0] bg-white px-3.5 py-3 shadow-[0_6px_22px_rgba(32,24,16,0.04)] sm:rounded-[24px] sm:px-4">
+          <div className="flex items-center gap-2 md:hidden">
+            <img src="/favicon.svg" alt={storeName} className="h-8 w-8 shrink-0 rounded-xl" />
+            <div className="leading-tight">
+              <div className="text-xs font-extrabold text-[#1D1C1A]">{storeName}</div>
+              <div className="text-[10px] font-bold text-[#F58C56]">Admin Studio</div>
+            </div>
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              setAdminMenu('catalog');
+              handleCatalogSmartSearch(e);
+              scrollToCatalogSection();
+            }}
+            className="order-3 flex w-full items-center gap-2 rounded-full bg-[#FAF7F2] px-3.5 py-2 focus-within:ring-2 focus-within:ring-[#F58C56] md:order-none md:max-w-sm md:flex-1"
+          >
+            <Search className="h-4 w-4 shrink-0 text-[#8C837A]" />
+            <input
+              type="text"
+              value={catalogQuery}
+              onChange={(e) => setCatalogQuery(e.target.value)}
+              placeholder="Quick search catalog..."
+              className="w-full bg-transparent text-xs font-semibold text-[#1D1C1A] placeholder:text-[#A39A91] focus:outline-none"
+            />
+            <span className="hidden rounded-md bg-white px-1.5 py-0.5 text-[10px] font-bold text-[#8C837A] shadow-sm sm:inline">
+              ⌘F
+            </span>
+          </form>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onCatalogChanged}
+              aria-label="Sync workspace data"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FAF7F2] text-[#6E655D] transition hover:bg-[#EFE9E0] hover:text-[#1D1C1A] sm:h-9 sm:w-9"
+            >
+              <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </button>
+
+            <div className="hidden items-center gap-2.5 rounded-full bg-[#FAF7F2] py-1 pl-1.5 pr-3 sm:flex">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F58C56] text-xs font-extrabold text-white">
+                {String(adminUsername || 'A')
+                  .slice(0, 1)
+                  .toUpperCase()}
+              </div>
+              <div className="leading-tight">
+                <div className="text-xs font-extrabold text-[#1D1C1A]">{adminUsername}</div>
+                <div className="text-[10px] font-semibold text-[#8C837A]">Administrator</div>
+              </div>
             </div>
 
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3.5 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
+              className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100 sm:px-3.5 sm:py-2"
             >
               <LogOut className="h-3.5 w-3.5" /> Log Out
             </button>
           </div>
-        </div>
+        </header>
+
+        {/* Page Title & Action Row */}
+        <section className="flex flex-col gap-3 px-0.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-extrabold tracking-tight text-[#1D1C1A] sm:text-2xl">
+              Admin Dashboard
+            </h2>
+            <p className="mt-0.5 text-xs font-medium text-[#8C837A]">
+              Plan, curate, and monitor your affiliate deals with ease.
+            </p>
+          </div>
+
+          {adminMenu === 'catalog' && (
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+              <button
+                type="button"
+                onClick={openNewForm}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#F58C56] px-3.5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#e57c45] sm:px-4"
+              >
+                <Plus className="h-4 w-4" /> Add Product
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowImport((s) => !s)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1E1D1B] px-3.5 py-2.5 text-xs font-bold text-white transition hover:bg-black sm:px-4"
+              >
+                <Upload className="h-3.5 w-3.5" /> CSV / JSON Import
+              </button>
+              <button
+                type="button"
+                onClick={handleExportJson}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#EFE9E0] bg-white px-3.5 py-2 text-xs font-bold text-[#1D1C1A] transition hover:bg-[#FAF7F2] sm:py-2.5"
+              >
+                <Download className="h-3.5 w-3.5" /> Export JSON
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#EFE9E0] bg-white px-3.5 py-2 text-xs font-bold text-[#1D1C1A] transition hover:bg-[#FAF7F2] sm:py-2.5"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" /> Export CSV
+              </button>
+            </div>
+          )}
+        </section>
 
         {statusBanner && (
-          <div className="mt-3">
-            <StatusBanner banner={statusBanner} onDismiss={() => setStatusBanner(null)} />
-          </div>
-        )}
-
-        {adminMenu === 'catalog' && analytics?.summary && (
-          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
-            <div className="rounded-2xl bg-[#FAF7F2] p-3">
-              <div className="text-[11px] font-semibold text-[#8C837A]">Products</div>
-              <div className="text-lg font-extrabold text-[#1D1C1A]">
-                {analytics.summary.totalProducts}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-[#FFF0EA] p-3">
-              <div className="text-[11px] font-semibold text-[#EE4D2D]">Shopee Clicks</div>
-              <div className="text-lg font-extrabold text-[#EE4D2D]">
-                {analytics.summary.totalShopeeClicks}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-[#FAF7F2] p-3">
-              <div className="text-[11px] font-semibold text-[#8C837A]">TikTok Clicks</div>
-              <div className="text-lg font-extrabold text-[#1D1C1A]">
-                {analytics.summary.totalTiktokClicks}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-[#F3F7FF] p-3">
-              <div className="text-[11px] font-semibold text-[#1E40AF]">Lazada Clicks</div>
-              <div className="text-lg font-extrabold text-[#1E40AF]">
-                {analytics.summary.totalLazadaClicks ?? 0}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-[#FFF4F4] p-3">
-              <div className="text-[11px] font-semibold text-[#D9261C]">Pinduoduo Clicks</div>
-              <div className="text-lg font-extrabold text-[#D9261C]">
-                {analytics.summary.totalPinduoduoClicks ?? 0}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-[#FAF7F2] p-3">
-              <div className="text-[11px] font-semibold text-[#8C837A]">Avg Trust</div>
-              <div className="text-lg font-extrabold text-[#F58C56]">
-                ★ {analytics.summary.avgReliability || '0.0'}
-              </div>
-            </div>
-          </div>
+          <StatusBanner banner={statusBanner} onDismiss={() => setStatusBanner(null)} />
         )}
 
         {adminMenu === 'catalog' && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={openNewForm}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#F58C56] px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#e57c45]"
-            >
-              <Plus className="h-4 w-4" /> Add Product
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowImport((s) => !s)}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#1E1D1B] px-4 py-2.5 text-xs font-bold text-white"
-            >
-              <Upload className="h-3.5 w-3.5" /> CSV / JSON Import
-            </button>
-            <button
-              type="button"
-              onClick={handleExportJson}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FAF7F2] px-4 py-2.5 text-xs font-bold text-[#1D1C1A] hover:bg-[#EFE9E0]"
-            >
-              <Download className="h-3.5 w-3.5" /> Export JSON
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FAF7F2] px-4 py-2.5 text-xs font-bold text-[#1D1C1A] hover:bg-[#EFE9E0]"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5" /> Export CSV
-            </button>
-            <button
-              type="button"
-              onClick={handleSyncAllPrices}
-              disabled={syncingAll}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FAF7F2] px-4 py-2.5 text-xs font-bold text-[#1D1C1A] hover:bg-[#EFE9E0] disabled:opacity-60"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${syncingAll ? 'animate-spin text-[#F58C56]' : ''}`} />
-              {syncingAll ? 'Syncing All...' : 'Sync All Prices'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowChromeSync((s) => !s)}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FFF0E6] px-4 py-2.5 text-xs font-bold text-[#C85A21] hover:bg-[#FFE4D1]"
-            >
-              <Globe className="h-3.5 w-3.5" /> Real Chrome Bulk Sync
-            </button>
-          </div>
+          <AdminOverviewBento
+            products={products}
+            analytics={analytics}
+            categories={categories}
+            chromeCdpState={chromeCdpState}
+            syncingAll={syncingAll}
+            onOpenNewProduct={openNewForm}
+            onSyncAllPrices={handleSyncAllPrices}
+            onToggleChromeSync={() => setShowChromeSync((s) => !s)}
+            onOpenEditProduct={openEditForm}
+            onNavigateMenu={(menu) => {
+              setAdminMenu(menu);
+              setStatusBanner(null);
+            }}
+            onScrollToCatalog={scrollToCatalogSection}
+          />
         )}
-      </section>
 
       {/* CHANGE PASSWORD MENU */}
       {adminMenu === 'password' && (
@@ -1331,6 +1503,21 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
             </button>
           </form>
         </section>
+      )}
+
+      {adminMenu === 'posting' && (
+        <AdminThreadsPosting
+          products={products}
+          onStatusBanner={setStatusBanner}
+          onApiError={handleApiError}
+        />
+      )}
+
+      {adminMenu === 'personas' && (
+        <AdminPersonas
+          onStatusBanner={setStatusBanner}
+          onApiError={handleApiError}
+        />
       )}
 
       {/* CATALOG MENU CONTENT */}
@@ -1694,7 +1881,13 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                     <input
                       required
                       value={form.title}
-                      onChange={(e) => setForm({ ...form, title: e.target.value })}
+                      onChange={(e) => {
+                        const nextTitle = e.target.value;
+                        setForm((prev) => {
+                          const next = { ...prev, title: nextTitle };
+                          return { ...next, tags: autoTagsForForm(next) };
+                        });
+                      }}
                       placeholder="e.g. Baseus MagSafe Powerbank 10000mAh"
                       className="w-full rounded-xl bg-[#FAF7F2] px-3 py-2 text-sm font-semibold"
                     />
@@ -1704,32 +1897,60 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-[11px] font-bold text-[#78716C]">
-                      Category
+                      Category ({categories.filter((c) => c.slug !== 'all').length} available)
                     </label>
-                    <select
+                    <CategoryDropdown
+                      categories={categories}
                       value={form.category_slug}
-                      onChange={(e) => setForm({ ...form, category_slug: e.target.value })}
-                      className="w-full rounded-xl bg-[#FAF7F2] px-3 py-2 text-sm font-semibold"
-                    >
-                      {categories
-                        .filter((c) => c.slug !== 'all')
-                        .map((c) => (
-                          <option key={c.slug} value={c.slug}>
-                            {c.name}
-                          </option>
-                        ))}
-                    </select>
+                      onChange={(nextSlug) => {
+                        setForm((prev) => {
+                          const next = { ...prev, category_slug: nextSlug };
+                          return { ...next, tags: autoTagsForForm(next) };
+                        });
+                      }}
+                    />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[11px] font-bold text-[#78716C]">
-                      Smart Search Tags (comma-separated)
-                    </label>
-                    <input
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <label className="text-[11px] font-bold text-[#78716C]">
+                        Smart Search Tags (auto-added, min 5)
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                            parseTagList(form.tags).length >= 5
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}
+                        >
+                          {parseTagList(form.tags).length}/5+ tags
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTagsManuallyEdited(false);
+                            setForm((prev) => ({ ...prev, tags: autoTagsForForm(prev, true) }));
+                          }}
+                          className="rounded-full bg-[#FFF0E6] px-2 py-0.5 text-[10px] font-bold text-[#C85A21] hover:bg-[#FFE4D1]"
+                        >
+                          Auto-Generate
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      rows={3}
                       value={form.tags}
-                      onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                      placeholder="powerbank,magsafe,murah,travel"
-                      className="w-full rounded-xl bg-[#FAF7F2] px-3 py-2 text-sm font-semibold"
+                      onChange={(e) => {
+                        setTagsManuallyEdited(true);
+                        setForm({ ...form, tags: e.target.value });
+                      }}
+                      placeholder="Auto-generated from product title & category (at least 5 tags)..."
+                      className="w-full rounded-xl bg-[#FAF7F2] px-3 py-2 text-xs font-semibold"
                     />
+                    <p className="mt-1 text-[10px] text-[#8C837A]">
+                      Tags update automatically from your title &amp; category. At least 5 smart
+                      search tags are guaranteed on save.
+                    </p>
                   </div>
                 </div>
 
@@ -1740,7 +1961,13 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                   <textarea
                     rows={2}
                     value={form.description}
-                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    onChange={(e) => {
+                      const nextDesc = e.target.value;
+                      setForm((prev) => {
+                        const next = { ...prev, description: nextDesc };
+                        return { ...next, tags: autoTagsForForm(next) };
+                      });
+                    }}
                     className="w-full rounded-xl bg-[#FAF7F2] px-3 py-2 text-sm"
                   />
                 </div>
@@ -1801,14 +2028,6 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setShowBookmarklet((s) => !s)}
-                        className="inline-flex items-center gap-1 rounded-full bg-[#FFF0E6] px-2.5 py-1 text-[11px] font-bold text-[#C85A21] hover:bg-[#ffe4d3]"
-                      >
-                        <Bookmark className="h-3 w-3" />
-                        Bookmarklet Sync
-                      </button>
                       {PLATFORM_LIST.map((pl) => {
                         const active = enabledPlatforms.includes(pl.id);
                         return (
@@ -1829,47 +2048,6 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                     </div>
                   </div>
 
-                  {showBookmarklet && (
-                    <div className="rounded-2xl border border-[#F58C56]/40 bg-white p-3.5 text-xs">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <div className="font-extrabold text-[#1D1C1A]">
-                            1-Click Browser Bookmarklet (Instant Shopee / TikTok / Lazada Sync)
-                          </div>
-                          <p className="mt-0.5 text-[11px] text-[#6E655D]">
-                            1. Drag <strong>⚡ HJA Sync</strong> to your browser bookmarks bar (or
-                            click Copy Code). 2. Open any product tab in Chrome. 3. Click the
-                            bookmark, then click <strong>Paste Sync</strong> below.
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <a
-                            href={buildSyncBookmarkletHref()}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              setStatusBanner({
-                                type: 'error',
-                                text: 'Do not click here — drag "⚡ HJA Sync" onto your browser Bookmarks Bar (press Ctrl+Shift+B to show it), or click Copy Code.',
-                              });
-                            }}
-                            draggable
-                            title="Drag this button to your browser bookmarks bar"
-                            className="inline-flex cursor-grab items-center gap-1 rounded-full bg-[#F58C56] px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm"
-                          >
-                            ⚡ HJA Sync
-                          </a>
-                          <button
-                            type="button"
-                            onClick={handleCopyBookmarklet}
-                            className="inline-flex items-center gap-1 rounded-full bg-[#FAF7F2] px-3 py-1.5 text-[11px] font-bold text-[#1D1C1A] hover:bg-[#EFE9E0]"
-                          >
-                            <Copy className="h-3 w-3" /> Copy Code
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   <div className="space-y-2.5">
                     {PLATFORM_LIST.filter((pl) => enabledPlatforms.includes(pl.id)).map((pl) => (
                       <div key={pl.id} className={`rounded-2xl p-3 ${pl.cardBgTint}`}>
@@ -1880,37 +2058,8 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                           <div className="flex flex-wrap items-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => handleClipboardPasteSync(pl.id)}
-                              className="inline-flex items-center gap-1 rounded-full bg-[#1E1D1B] px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-black"
-                            >
-                              <ClipboardPaste className="h-3 w-3 text-[#F58C56]" />
-                              Paste Sync
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setQuickPasteOpen((prev) => ({
-                                  ...prev,
-                                  [pl.id]: !prev[pl.id],
-                                }))
-                              }
-                              className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#6E655D] shadow-sm hover:text-[#1D1C1A]"
-                            >
-                              Quick Paste
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAutoFetch(pl.id)}
-                              disabled={fetchingMeta === pl.id || syncingChromeOne === pl.id}
-                              className={`inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold shadow-sm ${pl.textClass}`}
-                            >
-                              <Sparkles className="h-3 w-3" />
-                              {fetchingMeta === pl.id ? 'Fetching...' : 'Auto-Fetch'}
-                            </button>
-                            <button
-                              type="button"
                               onClick={() => handleChromeSyncOne(pl.id)}
-                              disabled={syncingChromeOne === pl.id || fetchingMeta === pl.id}
+                              disabled={syncingChromeOne === pl.id}
                               className="inline-flex items-center gap-1 rounded-full bg-[#FFF0E6] px-2.5 py-1 text-[11px] font-bold text-[#C85A21] shadow-sm hover:bg-[#FFE4D1] disabled:opacity-60"
                             >
                               <Globe className="h-3 w-3" />
@@ -1927,43 +2076,6 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                             )}
                           </div>
                         </div>
-
-                        {quickPasteOpen[pl.id] && (
-                          <div className="mb-2.5 rounded-xl bg-white p-2.5 shadow-sm">
-                            <textarea
-                              rows={2}
-                              value={quickPasteText[pl.id] || ''}
-                              onChange={(e) =>
-                                setQuickPasteText((prev) => ({
-                                  ...prev,
-                                  [pl.id]: e.target.value,
-                                }))
-                              }
-                              placeholder="Paste copied product text from Shopee/TikTok app (e.g. 'Anker Earbuds RM79.90 ★ 4.9 14.8k sold') or Bookmarklet code..."
-                              className="w-full rounded-lg bg-[#FAF7F2] p-2 text-xs text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#F58C56]"
-                            />
-                            <div className="mt-1.5 flex justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setQuickPasteOpen((prev) => ({ ...prev, [pl.id]: false }))
-                                }
-                                className="rounded-lg bg-[#FAF7F2] px-2.5 py-1 text-[11px] font-bold text-[#6E655D]"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  applyExtractedToPlatform(pl.id, quickPasteText[pl.id] || '')
-                                }
-                                className="rounded-lg bg-[#F58C56] px-3 py-1 text-[11px] font-bold text-white"
-                              >
-                                Extract Price &amp; Rating
-                              </button>
-                            </div>
-                          </div>
-                        )}
 
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                           <input
@@ -2098,7 +2210,10 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
               : Math.min(totalCatalogCount, safePage * CATALOG_PAGE_SIZE);
 
             return (
-              <section className="rounded-[28px] bg-white p-5 shadow-sm">
+              <section
+                id="admin-catalog-section"
+                className="rounded-[24px] border border-[#EFE9E0] bg-white p-5 shadow-[0_6px_22px_rgba(32,24,16,0.04)]"
+              >
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
                   <h3 className="text-sm font-extrabold text-[#1D1C1A]">
                     Catalog (
@@ -2108,10 +2223,10 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
                     )
                   </h3>
 
-                  <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:max-w-xl">
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:max-w-xl">
                     <form
                       onSubmit={handleCatalogSmartSearch}
-                      className="flex min-w-[220px] flex-1 items-center gap-1.5 rounded-2xl bg-[#FAF7F2] px-3 py-1.5 focus-within:ring-2 focus-within:ring-[#F58C56]"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-2xl bg-[#FAF7F2] px-3 py-1.5 focus-within:ring-2 focus-within:ring-[#F58C56]"
                     >
                       <Search className="h-3.5 w-3.5 shrink-0 text-[#8C837A]" />
                       <input
@@ -2267,6 +2382,113 @@ export function AdminDashboard({ categories, products, onCatalogChanged }) {
           })()}
         </>
       )}
+      </div>
+
+      {/* Mobile Admin Floating Bottom Dock (matches Storefront PWA dock) */}
+      <nav
+        aria-label="Admin mobile navigation"
+        className="fixed bottom-3 left-1/2 z-40 w-[calc(100%-20px)] max-w-md -translate-x-1/2 rounded-[26px] bg-[#1E1D1B] px-2.5 py-2 shadow-[0_14px_38px_rgba(18,16,14,0.32)] md:hidden"
+      >
+        <div className="flex items-center justify-between">
+          {[...menuNavItems, ...generalNavItems].map((item) => {
+            const Icon = item.icon;
+            const isActive = adminMenu === item.id;
+            const shortLabel = item.id === 'password' ? 'Password' : item.label;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-label={item.label}
+                onClick={() => {
+                  setAdminMenu(item.id);
+                  setStatusBanner(null);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className={`relative flex flex-col items-center gap-0.5 rounded-2xl px-2.5 py-1 transition ${
+                  isActive
+                    ? 'bg-[#F58C56]/15 text-[#F58C56]'
+                    : 'text-[#A69F98] hover:text-white'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span className="whitespace-nowrap text-[10px] font-bold">{shortLabel}</span>
+              </button>
+            );
+          })}
+          {onNavigateStorefront && (
+            <button
+              type="button"
+              aria-label="View Storefront"
+              onClick={onNavigateStorefront}
+              className="flex flex-col items-center gap-0.5 rounded-2xl px-2.5 py-1 text-[#A69F98] transition hover:text-white"
+            >
+              <Store className="h-4 w-4" />
+              <span className="whitespace-nowrap text-[10px] font-bold">Store</span>
+            </button>
+          )}
+        </div>
+      </nav>
+
+      <ConfirmDialog
+        open={Boolean(pendingSaveProduct)}
+        title={pendingSaveProduct?.isEdit ? 'Confirm Product Update' : 'Confirm Adding Product'}
+        description={
+          pendingSaveProduct?.isEdit
+            ? `Are you sure you want to save these changes to ${pendingSaveProduct.productCode}?`
+            : 'Are you sure you want to publish this product to the BeliApaHarini catalog?'
+        }
+        details={pendingSaveProduct?.details || []}
+        confirmLabel={pendingSaveProduct?.isEdit ? 'Yes, Save Changes' : 'Yes, Add Product'}
+        cancelLabel="Review Details"
+        loading={saving}
+        onConfirm={confirmSaveProduct}
+        onCancel={() => setPendingSaveProduct(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingDeleteProduct)}
+        title="Confirm Product Deletion"
+        description="Are you sure you want to permanently remove this product from the catalog? This action cannot be undone."
+        details={
+          pendingDeleteProduct
+            ? [
+                { label: 'Product Code', value: pendingDeleteProduct.code },
+                { label: 'Product Title', value: pendingDeleteProduct.title },
+              ]
+            : []
+        }
+        confirmLabel="Yes, Delete Product"
+        cancelLabel="Keep Product"
+        variant="danger"
+        loading={deletingProduct}
+        onConfirm={confirmDeleteProduct}
+        onCancel={() => {
+          if (!deletingProduct) setPendingDeleteProduct(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="Confirm Sign Out"
+        description="Are you sure you want to sign out of the Admin Dashboard?"
+        confirmLabel="Yes, Log Out"
+        cancelLabel="Stay Signed In"
+        variant="danger"
+        loading={loggingOut}
+        onConfirm={confirmLogout}
+        onCancel={() => {
+          if (!loggingOut) setShowLogoutConfirm(false);
+        }}
+      />
+
+      <ResultDialog
+        open={Boolean(productResultModal)}
+        status={productResultModal?.status || 'success'}
+        title={productResultModal?.title}
+        message={productResultModal?.message}
+        details={productResultModal?.details || []}
+        onClose={() => setProductResultModal(null)}
+      />
     </div>
   );
 }

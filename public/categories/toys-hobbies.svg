@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorTH" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coralTH" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="204" rx="78" ry="15" fill="url(#floorTH)"/>
+  <rect x="64" y="130" width="60" height="60" rx="14" fill="#98BCAE"/>
+  <rect x="78" y="118" width="14" height="14" rx="5" fill="#CFE3D8"/>
+  <rect x="102" y="118" width="14" height="14" rx="5" fill="#CFE3D8"/>
+  <rect x="132" y="130" width="60" height="60" rx="14" fill="#F3E4D1"/>
+  <rect x="146" y="118" width="14" height="14" rx="5" fill="#FFFDF9"/>
+  <rect x="170" y="118" width="14" height="14" rx="5" fill="#FFFDF9"/>
+  <rect x="98" y="70" width="60" height="60" rx="14" fill="url(#coralTH)"/>
+  <rect x="112" y="58" width="14" height="14" rx="5" fill="#FFBE99"/>
+  <rect x="136" y="58" width="14" height="14" rx="5" fill="#FFBE99"/>
+</svg>

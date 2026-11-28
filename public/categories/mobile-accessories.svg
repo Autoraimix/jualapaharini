@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorMA" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="phoneBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#45413C"/>
+      <stop offset="100%" stop-color="#1E1D1B"/>
+    </linearGradient>
+    <linearGradient id="screenWarm" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="60%" stop-color="#F6EAE0"/>
+      <stop offset="100%" stop-color="#E7D4C0"/>
+    </linearGradient>
+    <linearGradient id="coralMag" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="206" rx="72" ry="14" fill="url(#floorMA)"/>
+  <rect x="78" y="46" width="84" height="152" rx="18" fill="url(#phoneBody)"/>
+  <rect x="85" y="54" width="70" height="136" rx="13" fill="url(#screenWarm)"/>
+  <rect x="108" y="58" width="24" height="6" rx="3" fill="#1E1D1B"/>
+  <circle cx="120" cy="116" r="22" fill="none" stroke="url(#coralMag)" stroke-width="7"/>
+  <path d="M120 142 L120 156" stroke="url(#coralMag)" stroke-width="6" stroke-linecap="round"/>
+  <rect x="132" y="114" width="52" height="72" rx="14" fill="#A6C4B5"/>
+  <rect x="138" y="122" width="40" height="56" rx="10" fill="#CFE3D8"/>
+  <circle cx="158" cy="150" r="10" fill="url(#coralMag)"/>
+</svg>

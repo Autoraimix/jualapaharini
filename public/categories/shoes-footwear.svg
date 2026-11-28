@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorSF" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coralSF" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="192" rx="82" ry="15" fill="url(#floorSF)"/>
+  <path d="M52 154 C52 118 68 88 94 84 C112 82 122 104 140 110 C166 118 202 126 206 154 Z" fill="url(#coralSF)"/>
+  <path d="M98 112 L134 118 L128 134 L94 128 Z" fill="#FFFDF9"/>
+  <rect x="46" y="150" width="166" height="24" rx="12" fill="#F3E4D1"/>
+  <path d="M56 164 L200 164" stroke="#98BCAE" stroke-width="5" stroke-linecap="round"/>
+</svg>

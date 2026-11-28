@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorBK" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="milkBottle" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="55%" stop-color="#F6EAE0"/>
+      <stop offset="100%" stop-color="#DFCCB7"/>
+    </linearGradient>
+    <linearGradient id="coralBK" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="204" rx="72" ry="15" fill="url(#floorBK)"/>
+  <path d="M114 48 C114 38 134 38 134 48 L138 66 L110 66 Z" fill="url(#coralBK)"/>
+  <rect x="96" y="64" width="56" height="18" rx="9" fill="#98BCAE"/>
+  <rect x="86" y="80" width="76" height="114" rx="24" fill="url(#milkBottle)"/>
+  <path d="M106 112 L124 112 M106 132 L120 132 M106 152 L124 152" stroke="#98BCAE" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="164" cy="172" r="20" fill="url(#coralBK)"/>
+  <circle cx="164" cy="172" r="8" fill="#FFFDF9"/>
+</svg>

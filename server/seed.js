@@ -8,6 +8,30 @@ export const SEED_CATEGORIES = [
   { slug: 'beauty', name: 'Beauty', emoji: '🧴', sort_order: 4 },
   { slug: 'fashion', name: 'Fashion', emoji: '👟', sort_order: 5 },
   { slug: 'fitness', name: 'Fitness', emoji: '💪', sort_order: 6 },
+  { slug: 'mobile-accessories', name: 'Mobile & Accessories', emoji: '📱', sort_order: 7 },
+  { slug: 'computer-laptop', name: 'Computers & Laptops', emoji: '💻', sort_order: 8 },
+  { slug: 'gaming', name: 'Gaming & Consoles', emoji: '🎮', sort_order: 9 },
+  { slug: 'audio', name: 'Audio & Headphones', emoji: '🔊', sort_order: 10 },
+  { slug: 'cameras', name: 'Cameras & Drones', emoji: '📷', sort_order: 11 },
+  { slug: 'smart-home', name: 'Smart Home & IoT', emoji: '🔌', sort_order: 12 },
+  { slug: 'appliances', name: 'Home Appliances', emoji: '🧺', sort_order: 13 },
+  { slug: 'furniture', name: 'Furniture & Decor', emoji: '🪑', sort_order: 14 },
+  { slug: 'bedding', name: 'Bedding & Bath', emoji: '🛏️', sort_order: 15 },
+  { slug: 'groceries', name: 'Groceries & Snacks', emoji: '🛒', sort_order: 16 },
+  { slug: 'health-supplements', name: 'Health & Supplements', emoji: '💊', sort_order: 17 },
+  { slug: 'baby-kids', name: 'Baby & Kids', emoji: '🍼', sort_order: 18 },
+  { slug: 'toys-hobbies', name: 'Toys & Hobbies', emoji: '🧩', sort_order: 19 },
+  { slug: 'pets', name: 'Pet Supplies', emoji: '🐾', sort_order: 20 },
+  { slug: 'automotive', name: 'Automotive & Motor', emoji: '🚗', sort_order: 21 },
+  { slug: 'travel-luggage', name: 'Travel & Luggage', emoji: '🧳', sort_order: 22 },
+  { slug: 'stationery-office', name: 'Office & Stationery', emoji: '📎', sort_order: 23 },
+  { slug: 'books-media', name: 'Books & Learning', emoji: '📚', sort_order: 24 },
+  { slug: 'watches-jewelry', name: 'Watches & Accessories', emoji: '⌚', sort_order: 25 },
+  { slug: 'bags-wallets', name: 'Bags & Wallets', emoji: '👜', sort_order: 26 },
+  { slug: 'shoes-footwear', name: 'Shoes & Footwear', emoji: '🥾', sort_order: 27 },
+  { slug: 'outdoor-camping', name: 'Outdoor & Camping', emoji: '⛺', sort_order: 28 },
+  { slug: 'tools-hardware', name: 'Tools & Hardware', emoji: '🛠️', sort_order: 29 },
+  { slug: 'gifts-festive', name: 'Gifts & Festive', emoji: '🎁', sort_order: 30 },
 ];
 
 export const SEED_PRODUCTS = [
@@ -240,17 +264,15 @@ export const SEED_PRODUCTS = [
 ];
 
 export function seedIfEmpty({ force = false } = {}) {
-  const catCount = db.prepare('SELECT COUNT(*) AS count FROM categories').get().count;
-  if (catCount === 0 || force) {
-    const insertCat = db.prepare(`
-      INSERT OR REPLACE INTO categories (slug, name, emoji, sort_order)
-      VALUES (@slug, @name, @emoji, @sort_order)
-    `);
-    const txCat = db.transaction((rows) => {
-      for (const row of rows) insertCat.run(row);
-    });
-    txCat(SEED_CATEGORIES);
-  }
+  // Always ensure all seed categories exist (safe for existing DBs when new categories are added)
+  const insertCat = db.prepare(`
+    INSERT OR IGNORE INTO categories (slug, name, emoji, sort_order)
+    VALUES (@slug, @name, @emoji, @sort_order)
+  `);
+  const txCat = db.transaction((rows) => {
+    for (const row of rows) insertCat.run(row);
+  });
+  txCat(SEED_CATEGORIES);
 
   const prodCount = db.prepare('SELECT COUNT(*) AS count FROM products').get().count;
   if (prodCount === 0 || force) {

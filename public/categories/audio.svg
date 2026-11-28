@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="floorAU" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C9BEB1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coralAU" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAC80"/>
+      <stop offset="60%" stop-color="#F58C56"/>
+      <stop offset="100%" stop-color="#D66833"/>
+    </linearGradient>
+    <linearGradient id="creamAU" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF9"/>
+      <stop offset="55%" stop-color="#F3E5D4"/>
+      <stop offset="100%" stop-color="#DAC6B0"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#FFFFFF"/>
+  <ellipse cx="128" cy="200" rx="74" ry="15" fill="url(#floorAU)"/>
+  <path d="M62 138 C62 84 94 56 128 56 C162 56 194 84 194 138" fill="none" stroke="#3B3733" stroke-width="14" stroke-linecap="round"/>
+  <path d="M84 68 C108 54 148 54 172 68" fill="none" stroke="url(#coralAU)" stroke-width="10" stroke-linecap="round"/>
+  <rect x="48" y="124" width="32" height="58" rx="16" fill="url(#coralAU)"/>
+  <rect x="74" y="130" width="12" height="46" rx="6" fill="url(#creamAU)"/>
+  <rect x="176" y="124" width="32" height="58" rx="16" fill="url(#coralAU)"/>
+  <rect x="170" y="130" width="12" height="46" rx="6" fill="url(#creamAU)"/>
+</svg>
